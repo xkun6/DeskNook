@@ -48,6 +48,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/build-installer.ps1   
 
 版本号取自 `src/DeskNook/DeskNook.csproj` 的 `<Version>`；升级安装（MajorUpgrade）靠固定的 UpgradeCode，旧版会被替换，已安装更新版本时拒绝降级。
 
+升级、修复、重装时 `AUTOSTART` 被忽略，保留原来的开机自启状态；要改，请在程序里设置。
+
 安装选项（安装界面「选项」页，或命令行属性）：
 
 | 属性 | 默认 | 作用 |

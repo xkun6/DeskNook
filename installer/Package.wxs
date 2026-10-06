@@ -75,8 +75,8 @@
     <CustomAction Id="DeskNook.Unregister" FileRef="DeskNook.exe" ExeCommand="--unregister" Execute="deferred" Impersonate="yes" Return="ignore" />
 
     <InstallExecuteSequence>
-      <!-- 安装 / 升级 / 修复：按选项写入开机自启 -->
-      <Custom Action="DeskNook.AutostartOn" After="InstallFiles" Condition="AUTOSTART=1 AND NOT (REMOVE=&quot;ALL&quot;)" />
+      <!-- 仅全新安装：按选项写入开机自启（升级 / 修复 / 重装一律不碰，保留用户原设置） -->
+      <Custom Action="DeskNook.AutostartOn" After="InstallFiles" Condition="AUTOSTART=1 AND NOT Installed AND NOT WIX_UPGRADE_DETECTED AND NOT (REMOVE=&quot;ALL&quot;)" />
       <!-- 卸载与升级（旧版被移除）：先让运行中的实例退出（恢复系统图标），再删文件 -->
       <Custom Action="DeskNook.Exit" Before="DeskNook.Unregister" Condition="REMOVE=&quot;ALL&quot;" />
       <!-- 仅真正卸载：删除 Shell 扩展注册与开机自启（升级时保留） -->
@@ -129,7 +129,8 @@
         <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
         <Control Id="Title" Type="Text" X="15" Y="6" Width="300" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}安装选项" />
         <Control Id="Description" Type="Text" X="25" Y="23" Width="340" Height="15" Transparent="yes" NoPrefix="yes" Text="选择需要的附加选项。" />
-        <Control Id="AutostartCheck" Type="CheckBox" X="30" Y="65" Width="300" Height="18" Property="AUTOSTART" CheckBoxValue="1" Text="开机自动启动桌面整理" />
+        <Control Id="AutostartCheck" Type="CheckBox" X="30" Y="65" Width="300" Height="18" Property="AUTOSTART" CheckBoxValue="1" Text="开机自动启动桌面整理" HideCondition="WIX_UPGRADE_DETECTED" />
+        <Control Id="AutostartUpgradeNote" Type="Text" X="30" Y="65" Width="300" Height="18" Transparent="yes" NoPrefix="yes" Text="升级安装将保留当前的开机自启设置" Hidden="yes" ShowCondition="WIX_UPGRADE_DETECTED" />
         <Control Id="DesktopShortcutCheck" Type="CheckBox" X="30" Y="95" Width="300" Height="18" Property="DESKTOPSHORTCUT" CheckBoxValue="1" Text="创建桌面快捷方式" />
         <Control Id="StartMenuNote" Type="Text" X="30" Y="135" Width="300" Height="18" Transparent="yes" NoPrefix="yes" Text="开始菜单快捷方式将始终创建。" />
       </Dialog>
