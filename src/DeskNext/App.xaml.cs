@@ -13,6 +13,7 @@ public partial class App : Application
     private static readonly TimeSpan ReattachTimeout = TimeSpan.FromSeconds(30);
 
     private Mutex? _mutex;
+    private ExitSignal? _exitSignal;
     private AttachMode _attach = AttachMode.Owner;
     private TransparencyMode _transparency = TransparencyMode.Dwm; // 阶段 0 实测选定 owner + dwm
     private DesktopController? _controller;
@@ -34,11 +35,24 @@ public partial class App : Application
         catch (Exception ex) { Log.Info($"设置菜单深色模式失败（忽略）：{ex.Message}"); }
         base.OnStartup(e);
 
+        // DeskNext.exe --autostart=on|off：只改写 HKCU 开机自启项后立即退出（安装包用），不启动界面、不受单实例影响
+        if (CliArgs.ParseAutostart(e.Args) is { } autostart)
+        {
+            AutoStart.Default.SetEnabled(autostart);
+            Shutdown();
+            return;
+        }
+
         // DeskNext.exe --exit：通知已运行的实例退出（自动化测试用），自己不启动
         if (e.Args.Any(a => a.Equals("--exit", StringComparison.OrdinalIgnoreCase)))
         {
-            var target = Win32.FindWindow(null, ShellMessageWindow.WindowName);
-            if (target != IntPtr.Zero) Win32.PostMessage(target, Win32.RegisterWindowMessage(ShellMessageWindow.ExitMessageName), IntPtr.Zero, IntPtr.Zero);
+            // 先走跨会话的命名事件（安装包在会话 0 调用）；没有事件（旧版实例）再退回窗口消息
+            if (!ExitSignal.TrySignal())
+            {
+                var target = Win32.FindWindow(null, ShellMessageWindow.WindowName);
+                if (target != IntPtr.Zero) Win32.PostMessage(target, Win32.RegisterWindowMessage(ShellMessageWindow.ExitMessageName), IntPtr.Zero, IntPtr.Zero);
+            }
+            ExitSignal.WaitOthersExit(8000); // 等实例退净（恢复图标、释放文件），卸载才不会遇到 exe 被占用
             Shutdown();
             return;
         }
@@ -83,6 +97,12 @@ public partial class App : Application
             DesktopShell.RestoreIcons();
         };
         AppDomain.CurrentDomain.ProcessExit += (_, _) => DesktopShell.RestoreIcons();
+
+        _exitSignal = ExitSignal.Listen(() =>
+        {
+            Log.Info("收到 --exit 退出信号");
+            Dispatcher.BeginInvoke(ExitApp);
+        });
 
         _messageWindow = new ShellMessageWindow();
         _messageWindow.TaskbarCreated += () => StartReattach("收到 TaskbarCreated（Explorer 重启）");
@@ -324,6 +344,7 @@ public partial class App : Application
     {
         _exiting = true;
         DesktopShell.RestoreIcons();
+        _exitSignal?.Dispose();
         _tray?.Dispose();
         _messageWindow?.Dispose();
         if (_mutex != null) ClearRunningFlag(); // 只有首实例（持有互斥量）才会写过标记

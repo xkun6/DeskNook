@@ -42,7 +42,7 @@ internal static class ShellExtRegistrar
             var dst = Path.Combine(ShellExtDir, $"DeskNextShellExt.{hash}.dll");
             if (!File.Exists(dst)) File.Copy(src, dst, overwrite: false);
 
-            var changed = CleanLegacyRegistration();
+            var changed = CleanLegacyRegistration(migrateAutostart: true);
             changed |= Write(dst);
             RegisteredDll = dst;
             CleanOld(dst);
@@ -70,7 +70,8 @@ internal static class ShellExtRegistrar
             foreach (var parent in HandlerParents)
                 classes.DeleteSubKeyTree($@"{parent}\shellex\ContextMenuHandlers\{HandlerName}", throwOnMissingSubKey: false);
             classes.DeleteSubKeyTree($@"CLSID\{ClsidText}", throwOnMissingSubKey: false);
-            CleanLegacyRegistration();
+            CleanLegacyRegistration(migrateAutostart: false);
+            DeleteAutostart();
             Win32.SHChangeNotify(Win32.SHCNE_ASSOCCHANGED, Win32.SHCNF_IDLIST, IntPtr.Zero, IntPtr.Zero);
             Log.Info("Shell 扩展注册项已删除");
         }
@@ -82,8 +83,20 @@ internal static class ShellExtRegistrar
         RegisteredDll = null;
     }
 
-    /// <summary>删除旧版 XkDesk 的 Shell 扩展注册与开机自启值；旧自启开着则改写为新值。返回是否有改动。</summary>
-    private static bool CleanLegacyRegistration()
+    /// <summary>--unregister：删除开机自启项（卸载后不应残留）。</summary>
+    private static void DeleteAutostart()
+    {
+        try
+        {
+            using var run = Registry.CurrentUser.CreateSubKey(AutoStart.RunSubKey);
+            run.DeleteValue(AutoStart.ValueName, throwOnMissingValue: false);
+            Log.Info("开机自启项已删除");
+        }
+        catch (Exception ex) { Log.Error("删除开机自启项失败", ex); }
+    }
+
+    /// <summary>删除旧版 XkDesk 的 Shell 扩展注册与开机自启值；migrateAutostart 为 true 时旧自启开着则改写为新值，false（卸载）只删除。返回是否有改动。</summary>
+    private static bool CleanLegacyRegistration(bool migrateAutostart)
     {
         var changed = false;
         try
@@ -102,8 +115,8 @@ internal static class ShellExtRegistrar
             if (run.GetValue(LegacyRunValue) != null)
             {
                 run.DeleteValue(LegacyRunValue, throwOnMissingValue: false);
-                AutoStart.Default.SetEnabled(true);
-                Log.Info("已清理旧版 XkDesk 自启项并改写为 DeskNext");
+                if (migrateAutostart) AutoStart.Default.SetEnabled(true);
+                Log.Info(migrateAutostart ? "已清理旧版 XkDesk 自启项并改写为 DeskNext" : "已清理旧版 XkDesk 自启项");
             }
             if (changed) Log.Info("已清理旧版 XkDesk Shell 扩展注册");
         }

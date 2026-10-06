@@ -34,8 +34,36 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/publish.ps1   # 发布
 | `--transparency=dwm` / `--transparency=layered` | 透明方案（默认 dwm） |
 | `--no-proxy` | 不使用 Explorer 内的菜单代理，右键菜单走进程内回退路径 |
 | `--exit` | 通知已运行的实例退出 |
-| `--unregister` | 删除 Shell 扩展的全部注册项后退出（卸载用） |
+| `--unregister` | 删除 Shell 扩展的全部注册项和开机自启项后退出（卸载用） |
+| `--autostart=on` / `--autostart=off` | 只改写开机自启项（`HKCU\...\Run\DeskNext`）后立即退出，不启动界面（安装包用） |
 | `--simulate-outdated-proxy` | 测试用：把 Explorer 内的菜单组件当作旧版，验证警告与托盘气泡 |
+
+## 安装包
+
+WiX v5 生成的 per-machine MSI：自带 .NET 运行时（self-contained，win-x64）、默认装到 `C:\Program Files\DeskNext`（需要管理员，会弹 UAC；安装界面可改目录）、界面为简体中文。WiX 通过 NuGet 还原，`dotnet build` 即可，不需要全局安装。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/build-installer.ps1   # 输出 artifacts\DeskNext-<版本>-x64.msi
+```
+
+版本号取自 `src/DeskNext/DeskNext.csproj` 的 `<Version>`；升级安装（MajorUpgrade）靠固定的 UpgradeCode，旧版会被替换，已安装更新版本时拒绝降级。
+
+安装选项（安装界面「选项」页，或命令行属性）：
+
+| 属性 | 默认 | 作用 |
+|---|---|---|
+| `AUTOSTART` | 1 | 1 = 安装后写入开机自启（以安装用户身份运行 `DeskNext.exe --autostart=on`）；0 = 不写 |
+| `DESKTOPSHORTCUT` | 1 | 1 = 创建桌面快捷方式；0 = 不创建（开始菜单快捷方式固定创建） |
+
+完成页「运行桌面整理」默认勾选，经 `explorer.exe` 间接启动，保证程序以普通用户身份而非提权身份运行（静默安装不会启动程序）。
+
+```powershell
+msiexec /i DeskNext-1.0.0-x64.msi /qn                                   # 静默安装（两项默认开启）
+msiexec /i DeskNext-1.0.0-x64.msi AUTOSTART=0 DESKTOPSHORTCUT=0 /qn     # 静默安装，不自启、无桌面快捷方式
+msiexec /x DeskNext-1.0.0-x64.msi /qn                                   # 静默卸载
+```
+
+卸载 / 升级时会先执行 `DeskNext.exe --exit` 让运行中的实例退出（恢复系统桌面图标）；真正卸载时再执行 `--unregister`，删除右键菜单扩展注册和开机自启项，升级则保留。数据不随卸载删除：装在 Program Files 下时数据在 `%AppData%\DeskNext`，需要时手动删除。
 
 ## 魔改入口：自定义右键菜单项
 
@@ -61,7 +89,9 @@ new()
 - 数据根下：`shellext\`（按哈希命名的扩展 DLL 副本）、`icons\`（菜单图标）
 - 旧版（数据在 `%AppData%\DeskNext`、`%LocalAppData%\DeskNext`）不会自动迁移；需要旧布局时手动把 `%AppData%\DeskNext\layout.json` 等复制到新的数据根即可。
 
-## 卸载
+## 卸载（手动 / 便携版）
+
+用安装包安装的直接在「设置 → 应用」里卸载即可（见上节）。便携版手动卸载：
 
 1. 运行 `DeskNext.exe --exit` 退出程序（或托盘 → 退出）。
 2. 运行 `DeskNext.exe --unregister` 删除 Shell 扩展注册项；托盘 / 设置里取消“开机自启”（或删除 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\DeskNext`）。
