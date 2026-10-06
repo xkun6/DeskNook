@@ -327,6 +327,8 @@ internal sealed class ExplorerMenuProxy
     /// <summary>桌面背景菜单里“查看 / 排序方式 / 刷新”作用在隐藏的系统 ListView 上：执行后让 DeskNook 同步。</summary>
     private void OnNativeInvoked(ProxyEvent ev)
     {
+        // 只对桌面背景菜单生效：格子/映射目录菜单里自定义项（排序方式/查看）与原生项同在一个菜单，标题会撞上
+        if (!_pending.TryGetValue(ev.Req, out var pending) || !pending.Context.IsDesktopBackground) return;
         if (ev.Parent.StartsWith("排序方式", StringComparison.Ordinal) || ev.Parent.StartsWith("Sort by", StringComparison.OrdinalIgnoreCase))
         {
             var key = ev.Title switch

@@ -247,6 +247,7 @@ DeskNook 拿不到的“交给 DeskNook 自己做”的动作，分两类：
 - 拦截只作用于 **DeskNook 自己发起的菜单**；用户在普通资源管理器窗口里右键不会带 `interceptVerbs`。
 
 未拦截但执行后需要同步的原生命令（`ExplorerMenuProxy.OnNativeInvoked`，依赖中英文标题）：
+- 仅对桌面背景菜单请求生效（`ExplorerMenuProxy.OnNativeInvoked` 用 `ev.Req` 查 `_pending` 里的 `MenuContext.IsDesktopBackground`）；格子/映射目录菜单不触发（原因：格子自定义项“排序方式/查看”与原生项同在一个菜单里，标题会撞上；回退路径 `ShellContextMenu.Show` 没有这类按标题同步，无需处理）；
 - 父菜单为“排序方式/Sort by”：按标题映射 `name/size/type/date` → `SortBy`；
 - 父菜单为“查看/View”：250ms 后 `SyncFromSystemView()` 重读系统视图的图标大小与间距（DefView 在自己线程里应用）；
 - 动词 `refresh` 或标题“刷新/Refresh”：`DesktopController.Refresh()`。
