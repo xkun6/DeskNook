@@ -61,10 +61,11 @@
 | 开机自启 | **立即生效**（点击即调用 `AutoStart.Default.SetEnabled`），状态以注册表为准，不在 `settings.json` 里 |
 | 图标大小 | `IconSizeMode`：`system`（跟随系统桌面“查看”）/ `small` 32 / `medium` 48 / `large` 96 |
 | 格子透明度滑块 | `BoxOpacity` 0.2~1.0（默认 0.7）；拖动时实时预览（`PreviewBoxOpacity`），不保存；窗口关闭时还原为已保存值 |
+| 日志保留天数 | `LogRetentionDays`：1 / 3 / 7（默认）/ 14 / 30 天单选（`SettingsWindow.xaml.cs:LoadGeneral/SelectedLogDays`）；保存后由 `Log.SetRetention` 立即清理超期日志 |
 
 **整理规则页**：列表（上移/下移/新增/删除/恢复默认）+ 编辑区（分类名、扩展名文本，分隔符为空格/逗号/分号/换行，含中文逗号分号）。“恢复默认”只改列表，不保存。
 
-保存 `OnSave` → `DesktopController.ApplySettings`：用窗口里的字段**新建**一个 `AppSettings`（`OrganizeRules`、`DoubleClickToggle`、`IconSizeMode`、`BoxOpacity`），`Normalize()`、写 `settings.json`、预览透明度；图标大小是固定值则 `SetIconSize`，否则 `SyncFromSystemView()`。
+保存 `OnSave` → `DesktopController.ApplySettings`：用窗口里的字段**新建**一个 `AppSettings`（`OrganizeRules`、`DoubleClickToggle`、`IconSizeMode`、`BoxOpacity`、`LogRetentionDays`），`Normalize()`、写 `settings.json`、`Log.SetRetention(LogRetentionDays)`（设保留天数并立即清理）、预览透明度；图标大小是固定值则 `SetIconSize`，否则 `SyncFromSystemView()`。
 
 **加一个设置项**：给 `AppSettings` 加属性（带默认值，旧 `settings.json` 缺字段自动取默认），必要时在 `Normalize()` 里夹范围；`SettingsWindow.xaml` 加控件、`LoadGeneral` 读、`OnSave` 写进新建的 `AppSettings`（**别漏**，否则保存后被默认值覆盖）；在 `ApplySettings` 里应用；补 `Stage4SettingsTests`。
 

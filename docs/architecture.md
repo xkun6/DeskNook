@@ -177,6 +177,6 @@ tools/                             publish.ps1、build-installer.ps1、gen-icons
 
 ## 日志
 
-- `data\logs\desknook.log`：`Services/Log.cs`，追加写，带线程号，永不抛异常。不做轮转，注意长期增长。
+- `data\logs\desknook-yyyy-MM-dd.log`：`Services/Log.cs:Log`，按写入时的本地日期分文件（跨零点自动换文件），追加写，带线程号，永不抛异常。保留天数取 `AppSettings.LogRetentionDays`（默认 7，含今天），清理时机：`DesktopController` 构造里读完设置后（`Log.SetRetention`）、`ApplySettings` 保存后、已设置保留天数后每天首次写日志时（常驻跨天）。`SetRetention` 调用前**不清理**（启动早期读设置前就会写日志，用默认值清理会误删用户设了更长保留期的文件）。只匹配 `desknook-yyyy-MM-dd.log`，文件名日期解析失败的与旧的 `desknook.log` 一律不碰（用户自行清理）；过期判定是纯函数 `Log.ExpiredFiles`（`tests/DeskNook.Tests/Stage4Tests.cs:LogRetentionTests`）。
 - `data\logs\shellext.log`：C++ 侧 `dn::Log`，超 1MB 清空重写；路径由 DLL 自身位置推导（DLL 必须位于 `<数据根>\shellext\`，目录名不符则不写日志）。
 - 排障时先看这两个文件，行内关键字见 [troubleshooting.md](troubleshooting.md)。

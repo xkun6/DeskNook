@@ -82,7 +82,8 @@ $Script:OutDir   = Join-Path $PSScriptRoot 'out'
 if (-not (Test-Path $Script:OutDir)) { New-Item -ItemType Directory -Path $Script:OutDir | Out-Null }
 $Script:ExePath  = Join-Path $Script:RepoRoot 'src\DeskNook\bin\Release\net9.0-windows\DeskNook.exe'
 $Script:DataDir  = Join-Path (Split-Path $Script:ExePath -Parent) 'data'   # 数据一律在程序目录下的 data
-$Script:LogPath  = Join-Path $Script:DataDir 'logs\desknook.log'
+# 主程序日志按天分文件，调用时按当天日期计算（跨零点也正确）
+function Get-LogPath { Join-Path $Script:DataDir ("logs\desknook-{0:yyyy-MM-dd}.log" -f (Get-Date)) }
 $Script:DesktopDir = [Environment]::GetFolderPath('Desktop')
 $Script:Results  = New-Object System.Collections.ArrayList
 
@@ -258,8 +259,8 @@ function Stop-ProcessByName {
 
 # ---------- 日志 ----------
 function Get-LogLines {
-    if (-not (Test-Path $Script:LogPath)) { return @() }
-    $fs = New-Object System.IO.FileStream($Script:LogPath, 'Open', 'Read', 'ReadWrite')
+    if (-not (Test-Path (Get-LogPath))) { return @() }
+    $fs = New-Object System.IO.FileStream((Get-LogPath), 'Open', 'Read', 'ReadWrite')
     try {
         $sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
         $lines = New-Object System.Collections.Generic.List[string]
@@ -269,15 +270,15 @@ function Get-LogLines {
 }
 # 当前日志字节数，用作 Wait-Log 的 -Since（按字节偏移读取，日志很大时也快）
 function Get-LogMark {
-    if (-not (Test-Path $Script:LogPath)) { return 0 }
-    return [int64](Get-Item $Script:LogPath).Length
+    if (-not (Test-Path (Get-LogPath))) { return 0 }
+    return [int64](Get-Item (Get-LogPath)).Length
 }
 
 # 读取 Since（字节偏移）之后的日志行
 function Get-LogSince {
     param([int64]$Since = 0)
-    if (-not (Test-Path $Script:LogPath)) { return @() }
-    $fs = New-Object System.IO.FileStream($Script:LogPath, 'Open', 'Read', 'ReadWrite')
+    if (-not (Test-Path (Get-LogPath))) { return @() }
+    $fs = New-Object System.IO.FileStream((Get-LogPath), 'Open', 'Read', 'ReadWrite')
     try {
         if ($Since -gt $fs.Length) { $Since = 0 }
         [void]$fs.Seek($Since, 'Begin')

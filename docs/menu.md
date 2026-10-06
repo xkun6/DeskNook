@@ -383,7 +383,7 @@ new()
 ### 魔改后的验证
 
 1. `dotnet build DeskNook.sln -c Release`（先 `DeskNook.exe --exit`，否则 exe 被锁）。
-2. 运行；右键触发；看 `data\logs\desknook.log` 的“自定义菜单项（Shell 扩展）：<标题>”和 `shellext.log` 的“插入 N 个命令”。
+2. 运行；右键触发；看 `data\logs\desknook-yyyy-MM-dd.log`（当天）的“自定义菜单项（Shell 扩展）：<标题>”和 `shellext.log` 的“插入 N 个命令”。
 3. 单测：仿 `MenuProtocolTests` 用 `MenuExtensions.BuildWire(...)` 断言适用条件/子菜单行为（纯函数，不需要桌面）。
 4. 改的是 C# 时**不需要**重启 Explorer；只有改 C++ 或协议才需要（Explorer 里的旧 DLL 被钉住）。
 

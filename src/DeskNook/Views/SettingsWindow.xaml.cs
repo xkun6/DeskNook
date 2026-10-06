@@ -70,6 +70,11 @@ public partial class SettingsWindow : Window
         SizeSmall.IsChecked = s.IconSizeMode == "small";
         SizeMedium.IsChecked = s.IconSizeMode == "medium";
         SizeLarge.IsChecked = s.IconSizeMode == "large";
+        LogDays1.IsChecked = s.LogRetentionDays == 1;
+        LogDays3.IsChecked = s.LogRetentionDays == 3;
+        LogDays7.IsChecked = s.LogRetentionDays == 7;
+        LogDays14.IsChecked = s.LogRetentionDays == 14;
+        LogDays30.IsChecked = s.LogRetentionDays == 30;
         OpacitySlider.Value = s.BoxOpacity;
         OpacityText.Text = $"{(int)Math.Round(s.BoxOpacity * 100)}%";
         _loading = false;
@@ -77,6 +82,9 @@ public partial class SettingsWindow : Window
 
     private string SelectedSizeMode() =>
         SizeSmall.IsChecked == true ? "small" : SizeMedium.IsChecked == true ? "medium" : SizeLarge.IsChecked == true ? "large" : "system";
+
+    private int SelectedLogDays() =>
+        LogDays1.IsChecked == true ? 1 : LogDays3.IsChecked == true ? 3 : LogDays14.IsChecked == true ? 14 : LogDays30.IsChecked == true ? 30 : AppSettings.DefaultLogRetentionDays;
 
     private void ShowTab(bool general)
     {
@@ -178,6 +186,7 @@ public partial class SettingsWindow : Window
             DoubleClickToggle = DblChk.IsChecked == true,
             IconSizeMode = SelectedSizeMode(),
             BoxOpacity = OpacitySlider.Value,
+            LogRetentionDays = SelectedLogDays(),
         });
         Close();
     }

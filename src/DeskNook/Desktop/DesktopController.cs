@@ -147,6 +147,7 @@ internal sealed class DesktopController : IDisposable
         _dispatcher = dispatcher;
         Layout = _store.Load();
         Settings = _settingsStore.Load();
+        Log.SetRetention(Settings.LogRetentionDays);
         IconsVisible = !Layout.View.IconsHidden;
         BoxOpacity = Settings.BoxOpacity;
         _organizeUndo = _undoStore.Load();
@@ -1113,6 +1114,7 @@ internal sealed class DesktopController : IDisposable
         settings.Normalize();
         Settings = settings;
         _settingsStore.Save(settings);
+        Log.SetRetention(settings.LogRetentionDays);
         PreviewBoxOpacity(settings.BoxOpacity);
         if (AppSettings.IconSizeOf(settings.IconSizeMode) is { } size) SetIconSize(size);
         else SyncFromSystemView();

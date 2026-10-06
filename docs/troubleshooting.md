@@ -1,6 +1,6 @@
 # 排障与踩过的坑
 
-日志位置（数据根见 [data-and-config.md](data-and-config.md)）：`<数据根>\logs\desknook.log`（主程序，追加写不轮转）、`<数据根>\logs\shellext.log`（C++ 扩展与代理，超 1MB 清空重写）。日志里会出现文件路径，贴给别人前先检查。
+日志位置（数据根见 [data-and-config.md](data-and-config.md)）：`<数据根>\logs\desknook-yyyy-MM-dd.log`（主程序，按天一个文件，按设置里的保留天数自动清理，默认 7 天，规则见 [architecture.md](architecture.md) “日志”；旧的 `desknook.log` 不再写入也不自动清理）、`<数据根>\logs\shellext.log`（C++ 扩展与代理，超 1MB 清空重写）。日志里会出现文件路径，贴给别人前先检查。
 
 ## 桌面图标消失
 
@@ -16,7 +16,7 @@ DeskNook 通过 `ShowWindow(SW_HIDE)` 隐藏系统 `SysListView32`，而不是�
 
 按顺序查：
 
-1. `desknook.log` 是否有“菜单代理”加载成功/失败记录；`shellext.log` 是否有 `DnHookProc`、代理窗口创建的记录。
+1. 当天的 `desknook-yyyy-MM-dd.log` 是否有“菜单代理”加载成功/失败记录；`shellext.log` 是否有 `DnHookProc`、代理窗口创建的记录。
 2. **Explorer 里还钉着旧 DLL**：升级或改了 C++ 后，旧 DLL 仍在 Explorer 进程里，新版本客户端与旧代理不匹配。主程序通过代理窗口标题检测版本，不一致时记日志并弹托盘气泡“菜单组件已更新，重启资源管理器后生效”。解决：重启 Explorer。
 3. 运行时带了 `--no-proxy`：不注册、不加载代理，菜单走进程内回退路径（只有部分项）。
 4. 注册表被清：检查 `HKCU\Software\Classes\*\shellex\ContextMenuHandlers\DeskNook` 等三个键（见 [data-and-config.md](data-and-config.md)）；重启 DeskNook 会 `EnsureRegistered` 重写。

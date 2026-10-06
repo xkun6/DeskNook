@@ -18,10 +18,10 @@
 ```
 <数据根>\
   layout.json                 布局（格子、自由图标位置、视图状态）
-  settings.json               设置（整理规则、双击隐藏、图标大小、格子透明度）
+  settings.json               设置（整理规则、双击隐藏、图标大小、格子透明度、日志保留天数）
   organize-undo.json          最近一次一键整理的撤销记录（成功撤销后删除）
   layout.json.bad-<时间戳>    损坏文件的备份（yyyyMMddHHmmssfff），settings.json.bad-* 同理
-  logs\desknook.log           主程序日志（追加写，不轮转）
+  logs\desknook-yyyy-MM-dd.log  主程序日志（按天一个文件，按 `LogRetentionDays` 清理；`Services/Log.cs:Log`；旧的 `desknook.log` 不处理）
   logs\shellext.log           C++ 扩展/代理日志（超 1MB 清空重写）
   running.flag                运行标记（内容为 PID），正常退出时删除；残留 = 上次异常退出
   shellext\DeskNookShellExt.<hash8>.dll   按内容哈希命名的扩展 DLL 副本
@@ -99,6 +99,7 @@
   "DoubleClickToggle": true,
   "IconSizeMode": "system",
   "BoxOpacity": 0.7,
+  "LogRetentionDays": 7,
   "OrganizeRules": [
     { "Name": "文件夹", "Extensions": [ "<dir>" ] },
     { "Name": "快捷方式与程序", "Extensions": [ "lnk", "url", "exe", "msi" ] },
@@ -112,6 +113,7 @@
 | `DoubleClickToggle` | 双击空白处隐藏/显示，默认 true |
 | `IconSizeMode` | `system`（默认）/ `small`(32) / `medium`(48) / `large`(96)；未知值 `Normalize()` 回到 `system` |
 | `BoxOpacity` | 格子背景不透明度，夹到 [0.2, 1.0]，默认 0.7（缺字段取默认，NaN 取默认） |
+| `LogRetentionDays` | 日志保留天数（含今天），取值 1/3/7/14/30，默认 7；缺字段或非法值 `Normalize()` 回到默认（`AppSettings.cs:AppSettings.Normalize`） |
 | `OrganizeRules` | 顺序即优先级；`<dir>`=文件夹，`*`=其余所有项；加载时去掉空名字、规则内的 null |
 
 开机自启**不在** `settings.json` 里，状态以注册表为准。

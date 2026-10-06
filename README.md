@@ -109,7 +109,7 @@ new()
 
 数据根目录（下称“数据根”）：程序位于 `C:\Program Files`、`C:\Program Files (x86)` 之下时为 `%AppData%\DeskNook`（该处程序目录通常不可写）；其余位置（便携版、解压/自行安装的目录）一律为程序目录下的 `data\`。
 
-- 数据根下：`layout.json`（布局与隐藏状态）、`settings.json`（设置）、`organize-undo.json`、`logs\`（`desknook.log`、`shellext.log`）、`running.flag`（运行标记，异常退出时残留，下次启动记录日志）
+- 数据根下：`layout.json`（布局与隐藏状态）、`settings.json`（设置）、`organize-undo.json`、`logs\`（`desknook-yyyy-MM-dd.log`、`shellext.log`）、`running.flag`（运行标记，异常退出时残留，下次启动记录日志）
 - 数据根下：`shellext\`（按哈希命名的扩展 DLL 副本）、`icons\`（菜单图标）
 - 旧版（曾用名 XkDesk / DeskNext，数据在 `%AppData%\DeskNext`、`%LocalAppData%\DeskNext`）不会自动迁移；需要旧布局时手动把 `%AppData%\DeskNext\layout.json` 等复制到新的数据根即可。首次启动会清理旧名称遗留的右键菜单注册与开机自启项（开机自启开着的会改写为 DeskNook）。
 

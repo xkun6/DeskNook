@@ -76,6 +76,7 @@ public class Stage4SettingsTests
         Assert.True(s.DoubleClickToggle);
         Assert.Equal("system", s.IconSizeMode);
         Assert.Equal(AppSettings.DefaultBoxOpacity, s.BoxOpacity);
+        Assert.Equal(7, s.LogRetentionDays);
     }
 
     [Fact]
@@ -90,6 +91,7 @@ public class Stage4SettingsTests
             Assert.True(s.DoubleClickToggle);
             Assert.Equal("system", s.IconSizeMode);
             Assert.Equal(0.7, s.BoxOpacity);
+            Assert.Equal(7, s.LogRetentionDays);
             Assert.Single(s.OrganizeRules);
             Assert.Equal("文档", s.OrganizeRules[0].Name);
         }
@@ -122,6 +124,23 @@ public class Stage4SettingsTests
         var s = new AppSettings { BoxOpacity = input };
         s.Normalize();
         Assert.Equal(expected, s.BoxOpacity, 3);
+    }
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(3, 3)]
+    [InlineData(7, 7)]
+    [InlineData(14, 14)]
+    [InlineData(30, 30)]
+    [InlineData(5, 7)]
+    [InlineData(0, 7)]
+    [InlineData(-1, 7)]
+    [InlineData(365, 7)]
+    public void 日志保留天数只接受可选值否则回默认(int input, int expected)
+    {
+        var s = new AppSettings { LogRetentionDays = input };
+        s.Normalize();
+        Assert.Equal(expected, s.LogRetentionDays);
     }
 
     [Fact]
@@ -169,5 +188,38 @@ public class ProxyVersionTests
         Assert.False(ExplorerMenuProxy.IsOutdated("DeskNookShellExt.06c5816b.dll", ""));
         Assert.False(ExplorerMenuProxy.IsOutdated("", "DeskNookShellExt.aaaaaaaa.dll"));
         Assert.False(ExplorerMenuProxy.IsOutdated(null, "DeskNookShellExt.aaaaaaaa.dll"));
+    }
+}
+
+/// <summary>日志过期判定：纯函数，只处理文件名，不碰磁盘。</summary>
+public class LogRetentionTests
+{
+    private static readonly DateTime Today = new(2026, 10, 7);
+
+    [Fact]
+    public void 保留七天含今天_更早的过期()
+    {
+        var r = Log.ExpiredFiles(new[] { "desknook-2026-10-01.log", "desknook-2026-09-30.log" }, Today, 7);
+        Assert.Equal(new[] { "desknook-2026-09-30.log" }, r);
+    }
+
+    [Fact]
+    public void 不匹配新文件名或日期非法的都不碰()
+    {
+        var r = Log.ExpiredFiles(new[] { "desknook.log", "desknook-abc.log", "other.txt", "desknook-2026-13-01.log", "shellext.log" }, Today, 1);
+        Assert.Empty(r);
+    }
+
+    [Fact]
+    public void 保留一天只留今天()
+    {
+        var r = Log.ExpiredFiles(new[] { "desknook-2026-10-07.log", "desknook-2026-10-06.log" }, Today, 1);
+        Assert.Equal(new[] { "desknook-2026-10-06.log" }, r);
+    }
+
+    [Fact]
+    public void 未来日期的文件不删()
+    {
+        Assert.Empty(Log.ExpiredFiles(new[] { "desknook-2026-10-08.log", "desknook-2030-01-01.log" }, Today, 1));
     }
 }

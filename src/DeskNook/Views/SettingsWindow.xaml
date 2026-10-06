@@ -90,7 +90,16 @@
                     <TextBlock x:Name="OpacityText" DockPanel.Dock="Right" HorizontalAlignment="Right" Foreground="#FF9AA3AD"/>
                 </DockPanel>
                 <Slider x:Name="OpacitySlider" Minimum="0.2" Maximum="1" TickFrequency="0.1" SmallChange="0.05" LargeChange="0.1" ValueChanged="OnOpacityChanged" Width="360" HorizontalAlignment="Left"/>
-                <TextBlock Margin="0,18,0,0" Foreground="#FF9AA3AD" TextWrapping="Wrap" Text="数值越小格子越透明（20%~100%）。图标大小选“跟随系统”时，以系统桌面“查看”菜单里的设置为准。"/>
+                <TextBlock Text="日志保留天数" Margin="0,14,0,6"/>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                    <RadioButton x:Name="LogDays1" GroupName="logdays" Content="1 天"/>
+                    <RadioButton x:Name="LogDays3" GroupName="logdays" Content="3 天"/>
+                    <RadioButton x:Name="LogDays7" GroupName="logdays" Content="7 天（默认）"/>
+                    <RadioButton x:Name="LogDays14" GroupName="logdays" Content="14 天"/>
+                    <RadioButton x:Name="LogDays30" GroupName="logdays" Content="30 天"/>
+                </StackPanel>
+                <TextBlock Foreground="#FF9AA3AD" TextWrapping="Wrap" Text="超过期限的日志自动删除（按天一个文件，在程序数据目录的 logs 文件夹）"/>
+                <TextBlock Margin="0,12,0,0" Foreground="#FF9AA3AD" TextWrapping="Wrap" Text="数值越小格子越透明（20%~100%）。图标大小选“跟随系统”时，以系统桌面“查看”菜单里的设置为准。"/>
             </StackPanel>
         </Grid>
 
