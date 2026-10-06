@@ -149,6 +149,11 @@ internal sealed class MenuPipeServer : IDisposable
                 ctx = _proxy.ContextOf(q.Req);
                 if (ctx == null) return MenuProtocol.SerializeQueryResult(0, Array.Empty<WireMenuItem>());
             }
+            else if (q.Proc == "explorer.exe" && _proxy.ContextOfUntagged(q.Kind) is { } owned)
+            {
+                // 旧版 handler 留在 Explorer 里读不到代理的请求 Id（各 DLL 副本的线程局部变量互不相通）：认领最近未关闭的 DeskNook 请求
+                ctx = owned;
+            }
             else
             {
                 Win32.GetCursorPos(out var pt);

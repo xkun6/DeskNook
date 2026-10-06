@@ -14,7 +14,11 @@ namespace DeskNook.Desktop;
 /// </summary>
 internal sealed class ExplorerMenuProxy
 {
-    private sealed record Pending(MenuContext Context, DateTime Created);
+    /// <summary>已发给代理、尚未关闭的菜单请求。Closed 由代理回报 closed 事件时置位。</summary>
+    internal sealed record Pending(MenuContext Context, DateTime Created, string Kind) { public bool Closed { get; set; } }
+
+    /// <summary>扩展查询不带 req 时，最多认领多久以内发起的请求。</summary>
+    internal static readonly TimeSpan UntaggedWindow = TimeSpan.FromSeconds(5);
 
     private readonly Dispatcher _dispatcher;
     private readonly DesktopController _c;
@@ -234,7 +238,7 @@ internal sealed class ExplorerMenuProxy
         req.InterceptVerbs = MenuExtensions.VerbInterceptors.Keys.ToList();
         req.IconsVisible = _c.IconsVisible;
         Purge();
-        _pending[req.Id] = new Pending(ctx, DateTime.UtcNow);
+        _pending[req.Id] = new Pending(ctx, DateTime.UtcNow, req.Kind);
 
         Win32.GetWindowThreadProcessId(hwnd, out var pid);
         Win32.AllowSetForegroundWindow(pid);
@@ -279,6 +283,24 @@ internal sealed class ExplorerMenuProxy
     /// <summary>DeskNook 发起的请求对应的上下文（Shell 扩展查询时用）；UI 线程。</summary>
     public MenuContext? ContextOf(string requestId) => _pending.TryGetValue(requestId, out var p) ? p.Context : null;
 
+    /// <summary>
+    /// 扩展查询没带 req 时的认领：Explorer 里可能同时有新旧两份 DeskNookShellExt（旧 handler 被 COM 缓存、新代理已换新 DLL），
+    /// 请求 Id 存在各自 DLL 的线程局部变量里，旧 handler 读不到新代理设置的 Id。此时把查询归给最近一个尚未关闭、类型一致的请求。UI 线程。
+    /// </summary>
+    public MenuContext? ContextOfUntagged(string kind) => FindUntagged(_pending, kind, DateTime.UtcNow)?.Context;
+
+    /// <summary>纯函数：在 <paramref name="window"/> 内选最近一个未关闭且 Kind 一致的请求；没有则 null。</summary>
+    internal static Pending? FindUntagged(IReadOnlyDictionary<string, Pending> pending, string kind, DateTime now)
+    {
+        Pending? best = null;
+        foreach (var p in pending.Values)
+        {
+            if (p.Closed || p.Kind != kind || now - p.Created > UntaggedWindow) continue;
+            if (best == null || p.Created > best.Created) best = p;
+        }
+        return best;
+    }
+
     // ------------------------------------------------------------ 收事件（UI 线程）
 
     public void OnEvent(ProxyEvent ev)
@@ -288,6 +310,7 @@ internal sealed class ExplorerMenuProxy
         switch (ev.Type)
         {
             case "closed":
+                if (pending != null) pending.Closed = true;
                 if (ev.Error.Length > 0)
                 {
                     Log.Error($"代理菜单失败：{ev.Error}（请求 {ev.Req}）");

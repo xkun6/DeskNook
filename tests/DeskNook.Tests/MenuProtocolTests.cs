@@ -234,4 +234,20 @@ public class MenuProtocolTests
         Assert.False(MenuExtensions.InSameFolder(new[] { @"C:\d\a.txt", @"C:\e\b.txt" }, out _));
         Assert.False(MenuExtensions.InSameFolder(Array.Empty<string>(), out _));
     }
+
+    [Fact]
+    public void 无req的查询认领最近未关闭且类型一致的请求()
+    {
+        var now = DateTime.UtcNow;
+        var old = new ExplorerMenuProxy.Pending(Ctx(), now.AddSeconds(-2), "background");
+        var recent = new ExplorerMenuProxy.Pending(Ctx(), now.AddSeconds(-1), "background");
+        var item = new ExplorerMenuProxy.Pending(Ctx(), now, "item");
+        var closed = new ExplorerMenuProxy.Pending(Ctx(), now, "background") { Closed = true };
+        var tooOld = new ExplorerMenuProxy.Pending(Ctx(), now - ExplorerMenuProxy.UntaggedWindow - TimeSpan.FromSeconds(1), "background");
+        var all = new Dictionary<string, ExplorerMenuProxy.Pending> { ["r1"] = old, ["r2"] = recent, ["r3"] = item, ["r4"] = closed, ["r5"] = tooOld };
+
+        Assert.Same(recent, ExplorerMenuProxy.FindUntagged(all, "background", now));
+        Assert.Same(item, ExplorerMenuProxy.FindUntagged(all, "item", now));
+        Assert.Null(ExplorerMenuProxy.FindUntagged(new Dictionary<string, ExplorerMenuProxy.Pending> { ["r4"] = closed, ["r5"] = tooOld }, "background", now));
+    }
 }

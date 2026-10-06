@@ -17,11 +17,12 @@ DeskNook 通过 `ShowWindow(SW_HIDE)` 隐藏系统 `SysListView32`，而不是�
 按顺序查：
 
 1. 当天的 `desknook-yyyy-MM-dd.log` 是否有“菜单代理”加载成功/失败记录；`shellext.log` 是否有 `DnHookProc`、代理窗口创建的记录。
-2. **Explorer 里还钉着旧 DLL**：升级或改了 C++ 后，旧 DLL 仍在 Explorer 进程里，新版本客户端与旧代理不匹配。主程序通过代理窗口标题检测版本，不一致时记日志并弹托盘气泡“菜单组件已更新，重启资源管理器后生效”。解决：重启 Explorer。
-3. 运行时带了 `--no-proxy`：不注册、不加载代理，菜单走进程内回退路径（只有部分项）。
-4. 注册表被清：检查 `HKCU\Software\Classes\*\shellex\ContextMenuHandlers\DeskNook` 等三个键（见 [data-and-config.md](data-and-config.md)）；重启 DeskNook 会 `EnsureRegistered` 重写。
-5. 管道连不上：`\\.\pipe\DeskNook.Menu` 由主程序创建；主程序没运行或被安全软件拦截时，代理只能不加项（原生菜单仍正常）。
-6. shellview 方式加载失败（`0x80040155`）是**预期**的：跨进程 `GetItemObject` 走不通，实际靠 `SetWindowsHookEx(WH_GETMESSAGE)` + `DnHookProc` + PIN 加载。详见 [menu.md](menu.md)。
+2. **只有桌面背景右键缺项、图标右键正常**：典型是 Explorer 里新旧两份 DLL 并存（`Get-Process explorer | % Modules` 里有两个 `DeskNookShellExt.*.dll`），旧 handler 查询不带 `req`，旧版 DeskNook 把它当资源管理器窗口，桌面背景项因 `IsDesktopBackground=false` 被过滤。`shellext.log` 里背景菜单没有“插入 N 个命令”，且旧 DLL 的 `QueryContextMenu` 日志可能写到已不存在的旧目录而看不到。现版本由 `MenuPipeServer.Evaluate` + `ExplorerMenuProxy.ContextOfUntagged` 兜底（见 [menu.md](menu.md)），换上新构建即可，不必重启 Explorer；重启 Explorer 可彻底清掉旧 DLL。可用管道客户端只发 `query` 复现：`req` 为空时应答 `{"q":0,"items":[]}` 即旧行为。
+3. **Explorer 里还钉着旧 DLL**：升级或改了 C++ 后，旧 DLL 仍在 Explorer 进程里，新版本客户端与旧代理不匹配。主程序通过代理窗口标题检测版本，不一致时记日志并弹托盘气泡“菜单组件已更新，重启资源管理器后生效”。解决：重启 Explorer。
+4. 运行时带了 `--no-proxy`：不注册、不加载代理，菜单走进程内回退路径（只有部分项）。
+5. 注册表被清：检查 `HKCU\Software\Classes\*\shellex\ContextMenuHandlers\DeskNook` 等三个键（见 [data-and-config.md](data-and-config.md)）；重启 DeskNook 会 `EnsureRegistered` 重写。
+6. 管道连不上：`\\.\pipe\DeskNook.Menu` 由主程序创建；主程序没运行或被安全软件拦截时，代理只能不加项（原生菜单仍正常）。
+7. shellview 方式加载失败（`0x80040155`）是**预期**的：跨进程 `GetItemObject` 走不通，实际靠 `SetWindowsHookEx(WH_GETMESSAGE)` + `DnHookProc` + PIN 加载。详见 [menu.md](menu.md)。
 
 ## 升级 DLL 不生效
 
