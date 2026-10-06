@@ -61,6 +61,24 @@ internal static class SystemDesktopView
         finally { Marshal.FreeCoTaskMem(pidl); }
     }
 
+    /// <summary>只读系统桌面当前的图标大小与间距（物理像素）；失败返回 null。</summary>
+    public static (int IconSizePx, int SpacingX, int SpacingY)? ReadMetrics()
+    {
+        try
+        {
+            var fv = Acquire();
+            if (fv == null) return null;
+            fv.GetViewModeAndIconSize(out _, out var iconSize);
+            fv.GetSpacing(out var spacing);
+            return (iconSize, spacing.X, spacing.Y);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("读取系统桌面图标大小失败", ex);
+            return null;
+        }
+    }
+
     public static SystemDesktopInfo? Read(IReadOnlyList<DesktopItem> items, IntPtr listViewHwnd)
     {
         try

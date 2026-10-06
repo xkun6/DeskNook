@@ -65,6 +65,7 @@ internal sealed class DesktopSurface : Canvas
         _c.CutStateChanged += UpdateCut;
         _c.RenameRequested += OnRenameRequested;
         _c.BoxRenameRequested += OnBoxRenameRequested;
+        _c.IconsVisibleChanged += ApplyIconsVisible;
         Loaded += (_, _) => Rebuild();
         Unloaded += OnUnloaded;
     }
@@ -85,6 +86,16 @@ internal sealed class DesktopSurface : Canvas
         _c.CutStateChanged -= UpdateCut;
         _c.RenameRequested -= OnRenameRequested;
         _c.BoxRenameRequested -= OnBoxRenameRequested;
+        _c.IconsVisibleChanged -= ApplyIconsVisible;
+    }
+
+    /// <summary>“显示桌面图标”开关：只隐藏本程序画的图标和格子，画布本身仍可右键（弹桌面背景菜单）。</summary>
+    private void ApplyIconsVisible()
+    {
+        var v = _c.IconsVisible ? Visibility.Visible : Visibility.Hidden;
+        foreach (var ctl in _controls.Values) ctl.Visibility = v;
+        foreach (var box in _boxes.Values) box.Visibility = v;
+        if (!_c.IconsVisible) _c.ClearSelection();
     }
 
     /// <summary>窗口激活状态变化：选中项在失焦时变灰。</summary>
@@ -160,6 +171,7 @@ internal sealed class DesktopSurface : Canvas
             SetLeft(ctl, pt.X);
             SetTop(ctl, pt.Y);
         }
+        if (!_c.IconsVisible) ApplyIconsVisible();
     }
 
     private void Detach(IconItemControl ctl)
@@ -596,6 +608,7 @@ internal sealed class DesktopSurface : Canvas
         var dot = name.LastIndexOf('.');
         if (!item.IsFolder && item.FilePath != null && dot > 0) box.Select(0, dot);
         else box.SelectAll();
+        Log.Info($"原位重命名框已显示：{key} 键盘焦点={box.IsKeyboardFocused}");
     }
 
     private void EndRename(bool commit)

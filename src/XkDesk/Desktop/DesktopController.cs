@@ -87,6 +87,40 @@ internal sealed class DesktopController : IDisposable
     public event Action<string>? RenameRequested;
     /// <summary>请求原位重命名某个格子的标题（参数为格子 Id）。</summary>
     public event Action<string>? BoxRenameRequested;
+    /// <summary>XkDesk 自己的图标和格子整体显示/隐藏状态变化。</summary>
+    public event Action? IconsVisibleChanged;
+
+    /// <summary>菜单代理（Explorer 进程内弹菜单）；null 或不可用时走进程内回退菜单。</summary>
+    public ExplorerMenuProxy? MenuProxy { get; set; }
+
+    /// <summary>XkDesk 的图标与格子是否显示（“查看 ▸ 显示桌面图标”的状态来源）。系统 ListView 始终保持隐藏。</summary>
+    public bool IconsVisible { get; private set; } = true;
+
+    public void SetIconsVisible(bool visible)
+    {
+        if (IconsVisible == visible) return;
+        IconsVisible = visible;
+        Log.Info($"XkDesk 图标显示状态：{(visible ? "显示" : "隐藏")}");
+        IconsVisibleChanged?.Invoke();
+    }
+
+    /// <summary>从系统桌面视图重新读取图标大小与间距（“查看 ▸ 大/中/小图标”作用在隐藏的 ListView 上后调用）。</summary>
+    public void SyncFromSystemView()
+    {
+        var m = SystemDesktopView.ReadMetrics();
+        if (m == null || _monitors.Count == 0) return;
+        var scale = _monitors.FirstOrDefault(x => x.IsPrimary).Scale;
+        if (scale <= 0) scale = 1;
+        var size = (int)Math.Round(m.Value.IconSizePx / scale);
+        _cellExtraDip = Math.Max(8, (m.Value.SpacingX - m.Value.IconSizePx) / scale);
+        _cellExtraYDip = Math.Max(8, (m.Value.SpacingY - m.Value.IconSizePx) / scale);
+        Log.Info($"同步系统桌面视图：图标={size}（原 {Layout.View.IconSize}）间距=({m.Value.SpacingX},{m.Value.SpacingY})px");
+        Layout.View.IconSize = size;
+        RebuildGrids();
+        Reconcile();
+        ScheduleSave();
+        ItemsChanged?.Invoke();
+    }
 
     public DesktopController(Dispatcher dispatcher)
     {
@@ -510,7 +544,7 @@ internal sealed class DesktopController : IDisposable
         finally { _menuBox = null; }
     }
 
-    private void ArmUndo(string op)
+    public void ArmUndo(string op)
     {
         _pendingOp = op;
         _pendingOpUntil = DateTime.UtcNow + TimeSpan.FromSeconds(20);
@@ -530,30 +564,55 @@ internal sealed class DesktopController : IDisposable
     public void ShowMenu(IntPtr hwnd, Win32.POINT screenPoint, string monitor, IReadOnlyList<DesktopItem> items)
     {
         ActiveHwnd = hwnd;
+        var same = SameParent(items);
+        var shift = (Win32.GetKeyState(Win32.VK_SHIFT) & 0x8000) != 0;
         var ctx = new MenuContext
         {
-            Controller = this, Items = SameParent(items), Hwnd = hwnd, ScreenPoint = screenPoint, Monitor = monitor,
-            Shift = (Win32.GetKeyState(Win32.VK_SHIFT) & 0x8000) != 0,
+            Controller = this, Items = same, Hwnd = hwnd, ScreenPoint = screenPoint, Monitor = monitor, Shift = shift,
+            Source = MenuSource.Desktop,
         };
+
+        // 优先让 Explorer 进程内的代理弹出真菜单（夸克/百度网盘/NVIDIA 等扩展只认 explorer.exe）
+        if (MenuProxy != null && !ExplorerMenuProxy.Disabled)
+        {
+            var req = new ProxyRequest
+            {
+                Kind = same.Count == 0 ? "background" : "item",
+                Folder = same.Count > 0 && same[0].Container.Length > 0 ? (BoxOf(same[0].Container)?.MappedPath ?? "::desktop") : "::desktop",
+                Items = same.Select(ProxyItemName).ToList(), X = screenPoint.X, Y = screenPoint.Y, Shift = shift,
+            };
+            if (MenuProxy.TryShow(ctx, req)) return;
+        }
+
         MenuExtensions.Current = ctx;
         try { ShellContextMenu.Show(ctx); }
         finally { MenuExtensions.Current = null; }
     }
 
+    /// <summary>发给代理的项名：桌面项为解析名（Key），映射格子里的项为文件系统路径。</summary>
+    private static string ProxyItemName(DesktopItem i) =>
+        i.Container.Length == 0 ? i.Key : (i.FilePath ?? i.Key[(i.Key.IndexOf(DesktopItemSource.KeySeparator) + 1)..]);
+
     /// <summary>格子空白处/标题栏右键：普通格子只有自定义格子菜单；映射格子再并入该目录的原生背景菜单。</summary>
     public void ShowBoxMenu(IntPtr hwnd, Win32.POINT screenPoint, string monitor, BoxState box)
     {
         ActiveHwnd = hwnd;
+        var shift = (Win32.GetKeyState(Win32.VK_SHIFT) & 0x8000) != 0;
         var ctx = new MenuContext
         {
             Controller = this, Items = Array.Empty<DesktopItem>(), Hwnd = hwnd, ScreenPoint = screenPoint, Monitor = monitor,
-            Shift = (Win32.GetKeyState(Win32.VK_SHIFT) & 0x8000) != 0, Box = box,
+            Shift = shift, Box = box, Source = box.Kind == BoxKind.Mapped ? MenuSource.MappedBox : MenuSource.Box,
         };
         MenuExtensions.Current = ctx;
         try
         {
             if (box.Kind == BoxKind.Mapped)
             {
+                if (MenuProxy != null && !ExplorerMenuProxy.Disabled && !string.IsNullOrEmpty(box.MappedPath))
+                {
+                    var req = new ProxyRequest { Kind = "background", Folder = box.MappedPath, X = screenPoint.X, Y = screenPoint.Y, Shift = shift };
+                    if (MenuProxy.TryShow(ctx, req)) return;
+                }
                 _menuBox = box;
                 try { ShellContextMenu.Show(ctx); }
                 finally { _menuBox = null; }
@@ -608,6 +667,7 @@ internal sealed class DesktopController : IDisposable
     public void BeginRename(string key)
     {
         if (ItemOf(key) == null) return;
+        Log.Info($"请求原位重命名：{key}");
         RenameRequested?.Invoke(key);
     }
 
@@ -933,6 +993,46 @@ internal sealed class DesktopController : IDisposable
             PlaceNear(keys, eff.Value.Grid.Name, col, row);
         }
         AfterBoxChange();
+    }
+
+    // ------------------------------------------------------------ 整理至新文件夹
+
+    /// <summary>在这些路径所在的目录新建文件夹，并用 IFileOperation 把它们移进去；renameAfter 时新文件夹出现后进入重命名。</summary>
+    public void MoveToNewFolder(IReadOnlyList<string> paths, bool renameAfter)
+    {
+        if (!MenuExtensions.InSameFolder(paths, out var dir)) return;
+        try
+        {
+            var name = "新建文件夹";
+            for (var i = 2; Directory.Exists(Path.Combine(dir, name)) || File.Exists(Path.Combine(dir, name)); i++) name = $"新建文件夹 ({i})";
+            var target = Path.Combine(dir, name);
+            Directory.CreateDirectory(target);
+            Log.Info($"整理至新文件夹：{target}（{paths.Count} 项）");
+            if (renameAfter) ExpectNewItem();
+
+            var iidItem = new Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE");
+            var op = (IFileOperation)Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("3AD05575-8857-4850-9277-11B85BDB8E09"))!)!;
+            try
+            {
+                op.SetOperationFlags(0x40 | 0x200 | 0x10); // ALLOWUNDO | NOCONFIRMMKDIR | NOCONFIRMATION
+                op.SetOwnerWindow(ActiveHwnd);
+                Win32.SHCreateItemFromParsingName(target, IntPtr.Zero, iidItem, out var dest);
+                foreach (var p in paths)
+                {
+                    if (Win32.SHCreateItemFromParsingName(p, IntPtr.Zero, iidItem, out var src) < 0) continue;
+                    op.MoveItem(src, dest, null, IntPtr.Zero);
+                    Marshal.ReleaseComObject(src);
+                }
+                var hr = op.PerformOperations();
+                Log.Info($"整理至新文件夹：PerformOperations hr=0x{hr:X}");
+                Marshal.ReleaseComObject(dest);
+            }
+            finally { Marshal.ReleaseComObject(op); }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("整理至新文件夹失败", ex);
+        }
     }
 
     // ------------------------------------------------------------ 一键整理 / 设置

@@ -16,6 +16,8 @@ public partial class App : Application
     private DesktopController? _controller;
     private readonly List<DesktopHostWindow> _hosts = new();
     private ShellMessageWindow? _messageWindow;
+    private ExplorerMenuProxy? _menuProxy;
+    private MenuPipeServer? _pipeServer;
     private DispatcherTimer? _reattachTimer;
     private DispatcherTimer? _displayTimer;
     private DateTime _reattachDeadline;
@@ -33,6 +35,14 @@ public partial class App : Application
         {
             var target = Win32.FindWindow(null, ShellMessageWindow.WindowName);
             if (target != IntPtr.Zero) Win32.PostMessage(target, Win32.RegisterWindowMessage(ShellMessageWindow.ExitMessageName), IntPtr.Zero, IntPtr.Zero);
+            Shutdown();
+            return;
+        }
+
+        // XkDesk.exe --unregister：删除 Shell 扩展的全部注册项后退出（用户卸载用）
+        if (e.Args.Any(a => a.Equals("--unregister", StringComparison.OrdinalIgnoreCase)))
+        {
+            ShellExtRegistrar.Unregister();
             Shutdown();
             return;
         }
@@ -81,6 +91,19 @@ public partial class App : Application
         _controller = new DesktopController(Dispatcher);
         _controller.Initialize(DesktopShell.FindDesktop().ListView);
 
+        // 右键菜单 v2：注册 Shell 扩展、启动菜单管道、确保 Explorer 里的菜单代理已加载
+        if (!ExplorerMenuProxy.Disabled)
+        {
+            var registered = ShellExtRegistrar.EnsureRegistered();
+            _menuProxy = new ExplorerMenuProxy(Dispatcher, _controller, _messageWindow.Handle);
+            _controller.MenuProxy = _menuProxy;
+            _pipeServer = new MenuPipeServer(Dispatcher, _controller, _menuProxy);
+            _pipeServer.Start();
+            if (registered) _menuProxy.EnsureLoadedAsync("启动");
+            // 预热：首次评估菜单/JSON 序列化会 JIT，容易超过扩展 150ms 的查询超时
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, () => _pipeServer?.WarmUp());
+        }
+
         if (!RebuildHosts("启动")) StartReattach("启动时未找到桌面窗口");
     }
 
@@ -93,6 +116,7 @@ public partial class App : Application
             else if (a == "--attach=owner") _attach = AttachMode.Owner;
             else if (a == "--transparency=dwm") _transparency = TransparencyMode.Dwm;
             else if (a == "--transparency=layered") _transparency = TransparencyMode.Layered;
+            else if (a == "--no-proxy") ExplorerMenuProxy.Disabled = true;
             else Log.Info($"忽略未知参数：{arg}");
         }
     }
@@ -178,6 +202,7 @@ public partial class App : Application
                 _reattachTimer?.Stop();
                 if (!RebuildHosts("Explorer 重启后重挂"))
                     Log.Error("重挂失败：桌面窗口已出现但挂载未成功");
+                else _menuProxy?.EnsureLoadedAsync("Explorer 重启后重挂");
             }
             else if (DateTime.UtcNow > _reattachDeadline)
             {
@@ -226,6 +251,8 @@ public partial class App : Application
         _displayTimer?.Stop();
         DesktopShell.RestoreIcons();
         CloseHosts();
+        _pipeServer?.Dispose();
+        _pipeServer = null;
         _controller?.Dispose();
         _controller = null;
         Shutdown();

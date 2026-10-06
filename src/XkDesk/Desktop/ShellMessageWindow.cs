@@ -17,6 +17,8 @@ internal sealed class ShellMessageWindow : IDisposable
     public const string WindowName = "XkDeskMessageWindow";
     public const string ExitMessageName = "XkDesk.ExitRequest";
 
+    public IntPtr Handle => _source.Handle;
+
     public event Action? TaskbarCreated;
     public event Action? DisplayChanged;
     public event Action? ExitRequested;
