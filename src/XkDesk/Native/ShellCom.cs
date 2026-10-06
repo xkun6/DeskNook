@@ -371,14 +371,86 @@ internal static class ShellApi
         }
     }
 
-    /// <summary>从桌面根取子项的 COM 对象（IContextMenu / IDataObject / IDropTarget 等）。</summary>
+    public static readonly Guid IID_IShellFolder = new("000214E6-0000-0000-C000-000000000046");
+
+    /// <summary>PIDL 是否只有一级（即桌面根的直接子项）。</summary>
+    public static bool IsSingleId(IntPtr pidl)
+    {
+        var cb = (ushort)Marshal.ReadInt16(pidl);
+        return cb == 0 || (ushort)Marshal.ReadInt16(pidl, cb) == 0;
+    }
+
+    /// <summary>
+    /// 绝对 PIDL 的父文件夹：一级 PIDL 的父就是桌面根；多级（映射格子里的项）用 SHBindToParent。
+    /// lastId 指向 absPidl 内部最后一级（不要释放）。调用方负责 ReleaseParent。
+    /// </summary>
+    public static IShellFolder? BindParent(IntPtr absPidl, out IntPtr lastId)
+    {
+        if (IsSingleId(absPidl)) { lastId = absPidl; return Desktop; }
+        lastId = IntPtr.Zero;
+        if (Win32.SHBindToParent(absPidl, IID_IShellFolder, out var ppv, out lastId) < 0 || ppv == IntPtr.Zero) return null;
+        try { return Marshal.GetObjectForIUnknown(ppv) as IShellFolder; }
+        finally { Marshal.Release(ppv); }
+    }
+
+    public static void ReleaseParent(IShellFolder? parent)
+    {
+        if (parent != null && !ReferenceEquals(parent, _desktop)) Marshal.ReleaseComObject(parent);
+    }
+
+    /// <summary>按路径绑定目录的 IShellFolder，同时返回其绝对 PIDL（调用方 ILFree）。失败返回 null。</summary>
+    public static IShellFolder? BindFolder(string path, out IntPtr absPidl)
+    {
+        absPidl = IntPtr.Zero;
+        if (Win32.SHParseDisplayName(path, IntPtr.Zero, out var abs, 0, out _) < 0 || abs == IntPtr.Zero) return null;
+        var hr = Desktop.BindToObject(abs, IntPtr.Zero, IID_IShellFolder, out var ppv);
+        if (hr < 0 || ppv == IntPtr.Zero) { Win32.ILFree(abs); return null; }
+        try
+        {
+            var f = Marshal.GetObjectForIUnknown(ppv) as IShellFolder;
+            if (f == null) { Win32.ILFree(abs); return null; }
+            absPidl = abs;
+            return f;
+        }
+        finally { Marshal.Release(ppv); }
+    }
+
+    /// <summary>取绝对 PIDL 项的 SFGAO 属性。</summary>
+    public static uint GetAttributes(byte[] pidlBytes, uint mask)
+    {
+        var p = PidlFromBytes(pidlBytes);
+        var parent = BindParent(p, out var last);
+        try
+        {
+            if (parent == null) return 0;
+            return parent.GetAttributesOf(1, new[] { last }, ref mask) >= 0 ? mask : 0;
+        }
+        finally
+        {
+            ReleaseParent(parent);
+            Marshal.FreeCoTaskMem(p);
+        }
+    }
+
+    /// <summary>取项的 COM 对象（IContextMenu / IDataObject / IDropTarget 等）。PIDL 为绝对 PIDL，且应属于同一父文件夹（以第一个为准）。</summary>
     public static T? GetUIObjectOf<T>(IReadOnlyList<byte[]> pidls, Guid iid, IntPtr hwnd) where T : class
     {
         using var arr = new PidlArray(pidls);
-        var hr = Desktop.GetUIObjectOf(hwnd, (uint)arr.Ptrs.Length, arr.Ptrs, iid, IntPtr.Zero, out var ppv);
-        if (hr < 0 || ppv == IntPtr.Zero) return null;
-        try { return Marshal.GetObjectForIUnknown(ppv) as T; }
-        finally { Marshal.Release(ppv); }
+        if (arr.Ptrs.Length == 0) return null;
+        var parent = BindParent(arr.Ptrs[0], out _);
+        try
+        {
+            if (parent == null) return null;
+            var last = arr.Ptrs.Select(Win32.ILFindLastID).ToArray();
+            var hr = parent.GetUIObjectOf(hwnd, (uint)last.Length, last, iid, IntPtr.Zero, out var ppv);
+            if (hr < 0 || ppv == IntPtr.Zero) return null;
+            try { return Marshal.GetObjectForIUnknown(ppv) as T; }
+            finally { Marshal.Release(ppv); }
+        }
+        finally
+        {
+            ReleaseParent(parent);
+        }
     }
 
     public static T? CreateViewObject<T>(Guid iid, IntPtr hwnd) where T : class

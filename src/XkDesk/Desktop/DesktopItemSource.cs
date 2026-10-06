@@ -17,12 +17,17 @@ namespace XkDesk.Desktop;
 internal sealed class DesktopItemSource : IDisposable
 {
     private const int WmNotify = Win32.WM_APP + 1;
+    /// <summary>映射格子内项 Key 的前缀分隔符：格子Id + 分隔符 + 路径。</summary>
+    public const char KeySeparator = (char)0x1F;
 
     private readonly HwndSource _window;
     private readonly DispatcherTimer _debounce;
     private readonly List<IntPtr> _registeredPidls = new();
     private readonly Dictionary<string, string> _renameHints = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<uint> _notifyIds = new();
+    private readonly string? _mappedPath;
+    private readonly string _container;
+    private readonly string _prefix;
     private List<DesktopItem> _items = new();
 
     public IReadOnlyList<DesktopItem> Items => _items;
@@ -33,8 +38,12 @@ internal sealed class DesktopItemSource : IDisposable
     /// <summary>图标需要重新加载：key 为 null 表示全部。</summary>
     public event Action<string?>? IconInvalidated;
 
-    public DesktopItemSource()
+    /// <summary>mappedPath 为 null = 桌面；否则监听并枚举该目录（映射格子），container 为映射格子 Id，其项的 Key 带该前缀。</summary>
+    public DesktopItemSource(string? mappedPath = null, string container = "")
     {
+        _mappedPath = mappedPath;
+        _container = container;
+        _prefix = container.Length == 0 ? "" : container + KeySeparator;
         var p = new HwndSourceParameters("XkDeskItemNotify")
         {
             WindowStyle = unchecked((int)Win32.WS_POPUP),
@@ -53,8 +62,8 @@ internal sealed class DesktopItemSource : IDisposable
             catch (Exception ex) { Log.Error("桌面项刷新失败", ex); }
         };
 
-        _items = Enumerate();
-        Log.Info($"桌面项枚举完成：{_items.Count} 项");
+        _items = Load();
+        Log.Info($"{(_mappedPath == null ? "桌面项" : "映射目录 " + _mappedPath)} 枚举完成：{_items.Count} 项");
         Register();
     }
 
@@ -63,11 +72,11 @@ internal sealed class DesktopItemSource : IDisposable
     {
         var hints = _renameHints.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
         _renameHints.Clear();
-        var fresh = Enumerate();
+        var fresh = Load();
         var diff = ItemDiff.Compute(_items, fresh, hints);
         _items = fresh;
         if (diff.IsEmpty) return;
-        Log.Info($"桌面项变化：新增 {diff.Added.Count}，删除 {diff.Removed.Count}，更新 {diff.Updated.Count}，改名 {diff.Renamed.Count}（共 {fresh.Count} 项）");
+        Log.Info($"{(_mappedPath == null ? "桌面项" : "映射目录")}变化：新增 {diff.Added.Count}，删除 {diff.Removed.Count}，更新 {diff.Updated.Count}，改名 {diff.Renamed.Count}（共 {fresh.Count} 项）");
         foreach (var u in diff.Updated) IconInvalidated?.Invoke(u.Key);
         Changed?.Invoke(diff);
     }
@@ -102,12 +111,19 @@ internal sealed class DesktopItemSource : IDisposable
                     Log.Info($"SHChangeNotifyRegister {what} id={id}");
                 }
 
-                Win32.SHGetSpecialFolderLocation(IntPtr.Zero, 0, out var root); // CSIDL_DESKTOP：虚拟项（回收站等）
-                Add(root, "桌面根");
-                Win32.SHGetKnownFolderIDList(ShellApi.FOLDERID_Desktop, 0, IntPtr.Zero, out var user);
-                Add(user, "用户桌面");
-                Win32.SHGetKnownFolderIDList(ShellApi.FOLDERID_PublicDesktop, 0, IntPtr.Zero, out var pub);
-                Add(pub, "公共桌面");
+                if (_mappedPath != null)
+                {
+                    if (Win32.SHParseDisplayName(_mappedPath, IntPtr.Zero, out var mapped, 0, out _) >= 0) Add(mapped, "映射目录 " + _mappedPath);
+                }
+                else
+                {
+                    Win32.SHGetSpecialFolderLocation(IntPtr.Zero, 0, out var root); // CSIDL_DESKTOP：虚拟项（回收站等）
+                    Add(root, "桌面根");
+                    Win32.SHGetKnownFolderIDList(ShellApi.FOLDERID_Desktop, 0, IntPtr.Zero, out var user);
+                    Add(user, "用户桌面");
+                    Win32.SHGetKnownFolderIDList(ShellApi.FOLDERID_PublicDesktop, 0, IntPtr.Zero, out var pub);
+                    Add(pub, "公共桌面");
+                }
             }
             finally
             {
@@ -152,9 +168,9 @@ internal sealed class DesktopItemSource : IDisposable
             Log.Info($"桌面通知：事件 0x{evt:X} [{n1}] [{n2}]");
 
             if ((evt & (ShellApi.SHCNE_RENAMEITEM | ShellApi.SHCNE_RENAMEFOLDER)) != 0 && n1 != null && n2 != null)
-                _renameHints[n1] = n2;
+                _renameHints[_prefix + n1] = _prefix + n2;
             if ((evt & (ShellApi.SHCNE_UPDATEITEM | ShellApi.SHCNE_ATTRIBUTES)) != 0 && n1 != null)
-                IconInvalidated?.Invoke(n1);
+                IconInvalidated?.Invoke(_prefix + n1);
             Schedule();
         }
         finally
@@ -167,15 +183,13 @@ internal sealed class DesktopItemSource : IDisposable
     private static string? NameOf(IntPtr pidl) =>
         ShellApi.GetNameFromPidl(pidl, ShellApi.SIGDN_DESKTOPABSOLUTEPARSING) ?? ShellApi.GetNameFromPidl(pidl, ShellApi.SIGDN_FILESYSPATH);
 
+    private List<DesktopItem> Load() => _mappedPath == null ? Enumerate() : EnumerateFolder(_mappedPath, _container);
+
     /// <summary>枚举桌面根的所有项。</summary>
     public static List<DesktopItem> Enumerate()
     {
         var list = new List<DesktopItem>();
         var desktop = ShellApi.Desktop;
-
-        var flags = ShellApi.SHCONTF_FOLDERS | ShellApi.SHCONTF_NONFOLDERS;
-        if (ReadAdvanced("Hidden") == 1) flags |= ShellApi.SHCONTF_INCLUDEHIDDEN;
-        if (ReadAdvanced("ShowSuperHidden") == 1) flags |= ShellApi.SHCONTF_INCLUDESUPERHIDDEN;
 
         // 系统桌面不显示的项（用户文件夹、OneDrive、网盘等命名空间项）：只保留系统视图里有的
         var userDesk = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
@@ -183,27 +197,66 @@ internal sealed class DesktopItemSource : IDisposable
         IFolderView2? sysView = null;
         var sysViewTried = false;
 
-        if (desktop.EnumObjects(IntPtr.Zero, flags, out var enumerator) < 0) return list;
+        EnumerateInto(list, desktop, IntPtr.Zero, "", "", (path, child) =>
+        {
+            var onDesktopDir = path != null &&
+                (string.Equals(Path.GetDirectoryName(path), userDesk, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(Path.GetDirectoryName(path), pubDesk, StringComparison.OrdinalIgnoreCase));
+            if (onDesktopDir) return true;
+            if (!sysViewTried) { sysView = SystemDesktopView.Acquire(); sysViewTried = true; }
+            return sysView == null || SystemDesktopView.IsShown(sysView, ShellApi.PidlToBytes(child));
+        });
+        return list;
+    }
+
+    /// <summary>枚举任意目录（映射格子）：用该目录的 IShellFolder，项的 PIDL 为绝对 PIDL，Key 带 container 前缀。</summary>
+    public static List<DesktopItem> EnumerateFolder(string path, string container)
+    {
+        var list = new List<DesktopItem>();
+        var folder = ShellApi.BindFolder(path, out var abs);
+        if (folder == null)
+        {
+            Log.Info($"映射目录无法绑定（可能已不存在）：{path}");
+            return list;
+        }
+        try { EnumerateInto(list, folder, abs, container, container + KeySeparator, null); }
+        finally
+        {
+            Marshal.ReleaseComObject(folder);
+            Win32.ILFree(abs);
+        }
+        return list;
+    }
+
+    /// <summary>folderAbs 为 Zero 表示 folder 是桌面根（子 PIDL 本身即绝对 PIDL）。accept 返回 false 的项被跳过。</summary>
+    private static void EnumerateInto(List<DesktopItem> list, IShellFolder folder, IntPtr folderAbs, string container, string keyPrefix,
+        Func<string?, IntPtr, bool>? accept)
+    {
+        var flags = ShellApi.SHCONTF_FOLDERS | ShellApi.SHCONTF_NONFOLDERS;
+        if (ReadAdvanced("Hidden") == 1) flags |= ShellApi.SHCONTF_INCLUDEHIDDEN;
+        if (ReadAdvanced("ShowSuperHidden") == 1) flags |= ShellApi.SHCONTF_INCLUDESUPERHIDDEN;
+
+        if (folder.EnumObjects(IntPtr.Zero, flags, out var enumerator) < 0) return;
         try
         {
             while (enumerator.Next(1, out var child, out var fetched) == ShellApi.S_OK && fetched == 1)
             {
                 try
                 {
-                    var key = ShellApi.GetDisplayName(desktop, child, ShellApi.SHGDN_FORPARSING);
-                    if (key.Length == 0) continue;
+                    var rawKey = ShellApi.GetDisplayName(folder, child, ShellApi.SHGDN_FORPARSING);
+                    if (rawKey.Length == 0) continue;
 
                     uint attrs = ShellApi.SFGAO_FOLDER | ShellApi.SFGAO_LINK | ShellApi.SFGAO_HIDDEN | ShellApi.SFGAO_GHOSTED |
                                  ShellApi.SFGAO_FILESYSTEM | ShellApi.SFGAO_CANRENAME;
-                    desktop.GetAttributesOf(1, new[] { child }, ref attrs);
+                    folder.GetAttributesOf(1, new[] { child }, ref attrs);
 
                     string? path = null;
                     long size = 0;
                     var modified = DateTime.MinValue;
                     var ext = "";
-                    if ((attrs & ShellApi.SFGAO_FILESYSTEM) != 0 && !key.StartsWith("::", StringComparison.Ordinal))
+                    if ((attrs & ShellApi.SFGAO_FILESYSTEM) != 0 && !rawKey.StartsWith("::", StringComparison.Ordinal))
                     {
-                        path = key;
+                        path = rawKey;
                         try
                         {
                             if (File.Exists(path))
@@ -221,21 +274,24 @@ internal sealed class DesktopItemSource : IDisposable
                         catch { /* 文件瞬间消失等，按空属性处理 */ }
                     }
 
-                    var onDesktopDir = path != null &&
-                        (string.Equals(Path.GetDirectoryName(path), userDesk, StringComparison.OrdinalIgnoreCase) ||
-                         string.Equals(Path.GetDirectoryName(path), pubDesk, StringComparison.OrdinalIgnoreCase));
-                    if (!onDesktopDir)
+                    if (accept != null && !accept(path, child)) continue;
+
+                    byte[] pidl;
+                    if (folderAbs == IntPtr.Zero) pidl = ShellApi.PidlToBytes(child);
+                    else
                     {
-                        if (!sysViewTried) { sysView = SystemDesktopView.Acquire(); sysViewTried = true; }
-                        if (sysView != null && !SystemDesktopView.IsShown(sysView, ShellApi.PidlToBytes(child))) continue;
+                        var full = Win32.ILCombine(folderAbs, child);
+                        try { pidl = ShellApi.PidlToBytes(full); }
+                        finally { Win32.ILFree(full); }
                     }
 
                     list.Add(new DesktopItem
                     {
-                        Key = key,
-                        DisplayName = ShellApi.GetDisplayName(desktop, child, ShellApi.SHGDN_NORMAL),
-                        EditName = ShellApi.GetDisplayName(desktop, child, ShellApi.SHGDN_INFOLDER | ShellApi.SHGDN_FOREDITING),
-                        Pidl = ShellApi.PidlToBytes(child),
+                        Key = keyPrefix + rawKey,
+                        Container = container,
+                        DisplayName = ShellApi.GetDisplayName(folder, child, ShellApi.SHGDN_NORMAL),
+                        EditName = ShellApi.GetDisplayName(folder, child, ShellApi.SHGDN_INFOLDER | ShellApi.SHGDN_FOREDITING),
+                        Pidl = pidl,
                         Attributes = attrs,
                         FilePath = path,
                         Size = size,
@@ -253,7 +309,6 @@ internal sealed class DesktopItemSource : IDisposable
         {
             Marshal.ReleaseComObject(enumerator);
         }
-        return list;
     }
 
     private static int ReadAdvanced(string name)

@@ -18,6 +18,8 @@ internal sealed class DesktopSurface : Canvas
     private readonly DesktopController _c;
     private readonly MonitorInfo _monitor;
     private readonly Dictionary<string, IconItemControl> _controls = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, BoxControl> _boxes = new();
+    private readonly List<Border> _guideLines = new();
     private readonly Border _band;
     private IntPtr _hwnd;
     private bool _windowActive = true;
@@ -29,9 +31,11 @@ internal sealed class DesktopSurface : Canvas
     private bool _banding;
     private Point _bandStart;
     private HashSet<string> _bandBase = new();
+    private BoxControl? _bandBox;
 
     // 重命名
     private TextBox? _renameBox;
+    private Canvas? _renameParent;
     private string? _renameKey;
     private bool _renameDone;
 
@@ -60,6 +64,7 @@ internal sealed class DesktopSurface : Canvas
         _c.IconInvalidated += OnIconInvalidated;
         _c.CutStateChanged += UpdateCut;
         _c.RenameRequested += OnRenameRequested;
+        _c.BoxRenameRequested += OnBoxRenameRequested;
         Loaded += (_, _) => Rebuild();
         Unloaded += OnUnloaded;
     }
@@ -79,6 +84,7 @@ internal sealed class DesktopSurface : Canvas
         _c.IconInvalidated -= OnIconInvalidated;
         _c.CutStateChanged -= UpdateCut;
         _c.RenameRequested -= OnRenameRequested;
+        _c.BoxRenameRequested -= OnBoxRenameRequested;
     }
 
     /// <summary>窗口激活状态变化：选中项在失焦时变灰。</summary>
@@ -109,34 +115,78 @@ internal sealed class DesktopSurface : Canvas
 
     private void Rebuild()
     {
-        var items = _c.ItemsOn(_monitor.DeviceName).ToDictionary(i => i.Key, StringComparer.OrdinalIgnoreCase);
+        var freeItems = _c.ItemsOn(_monitor.DeviceName).ToDictionary(i => i.Key, StringComparer.OrdinalIgnoreCase);
+        var boxes = _c.BoxesOn(_monitor.DeviceName).ToList();
+        var boxItems = boxes.ToDictionary(b => b.Id, b => _c.BoxItems(b));
+        var wanted = new HashSet<string>(freeItems.Keys, StringComparer.OrdinalIgnoreCase);
+        foreach (var list in boxItems.Values) foreach (var it in list) wanted.Add(it.Key);
 
-        foreach (var key in _controls.Keys.Where(k => !items.ContainsKey(k)).ToList())
+        foreach (var key in _controls.Keys.Where(k => !wanted.Contains(k)).ToList())
         {
-            Children.Remove(_controls[key]);
+            Detach(_controls[key]);
             _controls.Remove(key);
+        }
+        foreach (var id in _boxes.Keys.Where(id => boxes.All(b => b.Id != id)).ToList())
+        {
+            Children.Remove(_boxes[id]);
+            _boxes.Remove(id);
         }
 
         var px = (int)Math.Round(_c.IconSize * _monitor.Scale);
-        foreach (var (key, item) in items)
+
+        // 格子：位置/大小/标题 + 内部图标
+        foreach (var box in boxes)
+        {
+            var eff = _c.EffectiveRect(box, ignoreCollapsed: true)!.Value;
+            if (!_boxes.TryGetValue(box.Id, out var bc))
+            {
+                bc = new BoxControl(box, _c, this);
+                _boxes[box.Id] = bc;
+                Children.Add(bc);
+            }
+            bc.Bind(box, eff.Rect, Origin);
+            var ctls = new List<IconItemControl>();
+            foreach (var item in boxItems[box.Id])
+                ctls.Add(BindItem(item, bc.Content, px, box));
+            bc.SetItems(ctls);
+        }
+
+        // 自由区图标
+        foreach (var (key, item) in freeItems)
         {
             var slot = _c.SlotOf(key)!;
-            if (!_controls.TryGetValue(key, out var ctl))
-            {
-                ctl = new IconItemControl();
-                _controls[key] = ctl;
-                Children.Add(ctl);
-            }
-            var changed = ctl.Item != item || ctl.Width != _c.CellW;
-            ctl.Bind(item, _c.IconSize, _c.CellW, _c.CellH);
+            var ctl = BindItem(item, this, px, null);
             var pt = CellToPoint(slot.Col, slot.Row);
             SetLeft(ctl, pt.X);
             SetTop(ctl, pt.Y);
-            ctl.WindowActive = _windowActive;
-            ctl.IsSelected = _c.Selected.Contains(key);
-            ctl.IsCut = _c.IsCut(item);
-            if (changed || ctl.NeedsIcon) LoadIcon(ctl, item, px);
         }
+    }
+
+    private void Detach(IconItemControl ctl)
+    {
+        if (ctl.Parent is Canvas parent) parent.Children.Remove(ctl);
+    }
+
+    /// <summary>创建/复用图标控件并放进 parent（自由区为 Surface，格子内为其 Content）。</summary>
+    private IconItemControl BindItem(DesktopItem item, Canvas parent, int px, BoxState? box)
+    {
+        if (!_controls.TryGetValue(item.Key, out var ctl))
+        {
+            ctl = new IconItemControl();
+            _controls[item.Key] = ctl;
+        }
+        if (!ReferenceEquals(ctl.Parent, parent))
+        {
+            Detach(ctl);
+            parent.Children.Add(ctl);
+        }
+        var changed = ctl.Item != item || ctl.Width != _c.CellW;
+        ctl.Bind(item, _c.IconSize, _c.CellW, _c.CellH);
+        ctl.WindowActive = _windowActive;
+        ctl.IsSelected = _c.Selected.Contains(item.Key);
+        ctl.IsCut = _c.IsCut(item);
+        if (changed || ctl.NeedsIcon) LoadIcon(ctl, item, px);
+        return ctl;
     }
 
     private void LoadIcon(IconItemControl ctl, DesktopItem item, int px)
@@ -169,7 +219,7 @@ internal sealed class DesktopSurface : Canvas
 
     // ------------------------------------------------------------ 命中
 
-    private IconItemControl? ItemAt(DependencyObject? source)
+    private static IconItemControl? ItemAt(DependencyObject? source)
     {
         while (source != null)
         {
@@ -179,23 +229,127 @@ internal sealed class DesktopSurface : Canvas
         return null;
     }
 
-    /// <summary>屏幕物理坐标下的图标 key（拖放用）。</summary>
-    public string? KeyAtScreenPoint(Win32.POINT screen)
+    public bool IsIconSource(DependencyObject? source) => ItemAt(source) != null;
+
+    private static BoxControl? BoxAtSource(DependencyObject? source)
     {
-        var local = new Point((screen.X - _monitor.Bounds.Left) / _monitor.Scale, (screen.Y - _monitor.Bounds.Top) / _monitor.Scale);
-        foreach (var (k, ctl) in _controls)
+        while (source != null)
         {
-            var left = GetLeft(ctl);
-            var top = GetTop(ctl);
-            var hb = ctl.HitBounds;
-            hb.Offset(left, top);
-            if (hb.Contains(local)) return k;
+            if (source is BoxControl bc) return bc;
+            source = source is Visual or System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(source) : LogicalTreeHelper.GetParent(source);
         }
         return null;
     }
 
-    public (int Col, int Row) CellAtScreenPoint(Win32.POINT screen) =>
-        PointToCell(new Point((screen.X - _monitor.Bounds.Left) / _monitor.Scale, (screen.Y - _monitor.Bounds.Top) / _monitor.Scale));
+    /// <summary>图标所在的格子控件；自由区图标为 null。</summary>
+    private static BoxControl? BoxOfControl(IconItemControl ctl) => (ctl.Parent as Canvas)?.Parent as BoxControl;
+
+    /// <summary>图标命中区在 Surface 坐标中的矩形。</summary>
+    private Rect BoundsOf(IconItemControl ctl)
+    {
+        try { return ctl.TransformToAncestor(this).TransformBounds(ctl.HitBounds); }
+        catch (InvalidOperationException) { return Rect.Empty; }
+    }
+
+    private Point ToLocal(Win32.POINT screen) =>
+        new((screen.X - _monitor.Bounds.Left) / _monitor.Scale, (screen.Y - _monitor.Bounds.Top) / _monitor.Scale);
+
+    private BoxControl? BoxAtLocal(Point local)
+    {
+        foreach (var bc in _boxes.Values.OrderByDescending(b => b.IsHoverExpanded))
+            if (bc.OuterRect.Contains(local)) return bc;
+        return null;
+    }
+
+    /// <summary>屏幕物理坐标下的格子（含标题栏）；没有返回 null。</summary>
+    public BoxState? BoxAtScreenPoint(Win32.POINT screen) => BoxAtLocal(ToLocal(screen))?.Box;
+
+    /// <summary>屏幕物理坐标下的图标 key（拖放用）：落在格子里只找该格子内的图标，否则只找自由区图标。</summary>
+    public string? KeyAtScreenPoint(Win32.POINT screen)
+    {
+        var local = ToLocal(screen);
+        var box = BoxAtLocal(local);
+        if (box != null && !box.ViewportRect.Contains(local)) return null;
+        foreach (var (k, ctl) in _controls)
+        {
+            if (!ctl.IsVisible || !ReferenceEquals(BoxOfControl(ctl), box)) continue;
+            if (BoundsOf(ctl).Contains(local)) return k;
+        }
+        return null;
+    }
+
+    public (int Col, int Row) CellAtScreenPoint(Win32.POINT screen) => PointToCell(ToLocal(screen));
+
+    /// <summary>拖到格子上时的插入位置（0..当前图标数）。</summary>
+    public int InsertIndexAtScreenPoint(BoxState box, Win32.POINT screen) =>
+        _boxes.TryGetValue(box.Id, out var bc) ? bc.InsertIndexAt(ToLocal(screen)) : int.MaxValue;
+
+    /// <summary>拖放反馈：高亮某个格子，和/或在某个格子里显示插入位置指示线。</summary>
+    public void SetDropFeedback(string? highlightBoxId, string? insertBoxId, int insertIndex)
+    {
+        foreach (var (id, bc) in _boxes)
+            bc.SetDropFeedback(id == highlightBoxId, id == insertBoxId ? insertIndex : null);
+    }
+
+    // ------------------------------------------------------------ 供 BoxControl 使用
+
+    /// <summary>本显示器工作区尺寸（DIP）。</summary>
+    public Size WorkSize
+    {
+        get
+        {
+            var g = Grid;
+            return g == null ? new Size(_monitor.Work.Width / _monitor.Scale, _monitor.Work.Height / _monitor.Scale)
+                             : new Size(g.WorkWidth / g.Scale, g.WorkHeight / g.Scale);
+        }
+    }
+
+    /// <summary>本显示器上其他格子的当前矩形（相对工作区）。</summary>
+    public IReadOnlyList<BoxRect> OtherRects(string boxId) =>
+        _c.BoxesOn(_monitor.DeviceName).Where(b => b.Id != boxId).Select(b => _c.EffectiveRect(b)!.Value.Rect).ToList();
+
+    /// <summary>显示/更新/清除对齐辅助线。</summary>
+    public void ShowGuides(IReadOnlyList<Guide> guides)
+    {
+        while (_guideLines.Count < guides.Count)
+        {
+            var line = new Border { Background = new SolidColorBrush(Color.FromArgb(0xE0, 0x5A, 0xB0, 0xFF)), IsHitTestVisible = false };
+            SetZIndex(line, 150);
+            Children.Add(line);
+            _guideLines.Add(line);
+        }
+        for (var i = 0; i < _guideLines.Count; i++)
+        {
+            var line = _guideLines[i];
+            if (i >= guides.Count) { line.Visibility = Visibility.Collapsed; continue; }
+            var g = guides[i];
+            line.Visibility = Visibility.Visible;
+            if (g.Vertical)
+            {
+                line.Width = 1; line.Height = Math.Max(1, g.To - g.From);
+                SetLeft(line, Origin.X + g.Pos); SetTop(line, Origin.Y + g.From);
+            }
+            else
+            {
+                line.Height = 1; line.Width = Math.Max(1, g.To - g.From);
+                SetLeft(line, Origin.X + g.From); SetTop(line, Origin.Y + g.Pos);
+            }
+        }
+    }
+
+    public void RequestBoxMenu(BoxState box)
+    {
+        Win32.GetCursorPos(out var pt);
+        _c.ActiveBox = box;
+        _c.ShowBoxMenu(_hwnd, pt, _monitor.DeviceName, box);
+    }
+
+    public void FocusSurface() => BringToForeground();
+
+    private void OnBoxRenameRequested(string boxId)
+    {
+        if (_boxes.TryGetValue(boxId, out var bc)) bc.BeginTitleEdit();
+    }
 
     // ------------------------------------------------------------ 鼠标
 
@@ -223,6 +377,7 @@ internal sealed class DesktopSurface : Canvas
             }
             _pressKey = key;
             _pressPoint = pos;
+            _c.ActiveBox = BoxOfControl(ctl)?.Box;
             _pressWasSelectedNoMod = false;
             if (ctrl) _c.ToggleSelection(key);
             else if (shift) _c.SelectRange(key);
@@ -233,8 +388,10 @@ internal sealed class DesktopSurface : Canvas
             return;
         }
 
-        // 空白处：开始框选
+        // 空白处（桌面或格子内）：开始框选（格子内只选该格子的图标）
         _pressKey = null;
+        _bandBox = BoxAtSource(e.OriginalSource as DependencyObject);
+        _c.ActiveBox = _bandBox?.Box;
         _banding = true;
         _bandStart = pos;
         _bandBase = ctrl ? new HashSet<string>(_c.Selected, StringComparer.OrdinalIgnoreCase) : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -260,9 +417,10 @@ internal sealed class DesktopSurface : Canvas
 
             var hits = _controls.Values.Where(c =>
             {
-                var hb = c.HitBounds;
-                hb.Offset(GetLeft(c), GetTop(c));
-                return hb.IntersectsWith(rect);
+                if (!c.IsVisible || !ReferenceEquals(BoxOfControl(c), _bandBox)) return false;
+                var hb = BoundsOf(c);
+                if (hb.IsEmpty || !hb.IntersectsWith(rect)) return false;
+                return _bandBox == null || hb.IntersectsWith(_bandBox.ViewportRect);
             }).Select(c => c.Item.Key);
             _c.SetSelection(_bandBase.Concat(hits));
             return;
@@ -303,9 +461,10 @@ internal sealed class DesktopSurface : Canvas
         {
             if (!_c.Selected.Contains(ctl.Item.Key)) _c.SelectOnly(ctl.Item.Key); // 右键未选中项：先只选中它
         }
-        else if (!Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+        else
         {
-            _c.ClearSelection();
+            _c.ActiveBox = BoxAtSource(e.OriginalSource as DependencyObject)?.Box;
+            if (!Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) _c.ClearSelection();
         }
     }
 
@@ -315,6 +474,12 @@ internal sealed class DesktopSurface : Canvas
         if (_renameBox != null) return;
         var ctl = ItemAt(e.OriginalSource as DependencyObject);
         Win32.GetCursorPos(out var pt);
+        if (ctl == null && BoxAtSource(e.OriginalSource as DependencyObject) is { } bc)
+        {
+            _c.ShowBoxMenu(_hwnd, pt, _monitor.DeviceName, bc.Box);
+            e.Handled = true;
+            return;
+        }
         var items = ctl != null ? _c.SelectedItems : Array.Empty<DesktopItem>();
         _c.ShowMenu(_hwnd, pt, _monitor.DeviceName, items);
         e.Handled = true;
@@ -333,7 +498,7 @@ internal sealed class DesktopSurface : Canvas
     /// <summary>由宿主窗口 PreviewKeyDown 转发。返回 true 表示已处理。</summary>
     public bool HandleKey(KeyEventArgs e)
     {
-        if (_renameBox != null) return false;
+        if (_renameBox != null || _boxes.Values.Any(b => b.IsEditingTitle)) return false;
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
         var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
         var shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
@@ -412,9 +577,10 @@ internal sealed class DesktopSurface : Canvas
         SetTop(box, top);
         SetZIndex(box, 200);
         _renameBox = box;
+        _renameParent = ctl.Parent as Canvas ?? this;
         _renameKey = key;
         _renameDone = false;
-        Children.Add(box);
+        _renameParent.Children.Add(box);
 
         box.KeyDown += (_, ke) =>
         {
@@ -441,7 +607,8 @@ internal sealed class DesktopSurface : Canvas
         _renameBox = null;
         _renameKey = null;
         var text = box.Text;
-        Children.Remove(box);
+        (_renameParent ?? this).Children.Remove(box);
+        _renameParent = null;
         Focus();
         if (commit) _c.CommitRename(key, text);
     }

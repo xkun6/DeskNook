@@ -29,7 +29,17 @@ public sealed class LayoutStore
                 s.FreeIcons = s.FreeIcons == null
                     ? new(StringComparer.OrdinalIgnoreCase)
                     : new Dictionary<string, IconSlot>(s.FreeIcons.Where(kv => kv.Value != null), StringComparer.OrdinalIgnoreCase);
-                s.Boxes ??= new();
+                s.Boxes = (s.Boxes ?? new()).Where(b => b != null).ToList();
+                foreach (var b in s.Boxes)
+                {
+                    b.Rect ??= new();
+                    b.ItemKeys ??= new();
+                    b.Name ??= "";
+                    b.SortMode ??= "";
+                    b.Monitor ??= "";
+                    b.Gone = b.Gone == null ? new(StringComparer.OrdinalIgnoreCase) : new Dictionary<string, DateTime>(b.Gone, StringComparer.OrdinalIgnoreCase);
+                    if (string.IsNullOrEmpty(b.Id)) b.Id = BoxOps.NewId();
+                }
                 s.View ??= new();
                 return s;
             }

@@ -170,6 +170,11 @@ internal static partial class Win32
     [DllImport("shell32.dll")] public static extern int SHGetNameFromIDList(IntPtr pidl, uint sigdnName, out IntPtr ppszName);
     [DllImport("shell32.dll")] public static extern uint ILGetSize(IntPtr pidl);
     [DllImport("shell32.dll")] public static extern void ILFree(IntPtr pidl);
+    [DllImport("shell32.dll")] public static extern IntPtr ILCombine(IntPtr pidl1, IntPtr pidl2);
+    [DllImport("shell32.dll")] public static extern IntPtr ILFindLastID(IntPtr pidl);
+    [DllImport("shell32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool ILRemoveLastID(IntPtr pidl);
+    [DllImport("shell32.dll")] public static extern int SHBindToParent(IntPtr pidl, [MarshalAs(UnmanagedType.LPStruct)] Guid riid, out IntPtr ppv, out IntPtr ppidlLast);
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern int SHParseDisplayName(string pszName, IntPtr pbc, out IntPtr ppidl, uint sfgaoIn, out uint psfgaoOut);
     [DllImport("shell32.dll")] public static extern int SHCreateItemFromIDList(IntPtr pidl, [MarshalAs(UnmanagedType.LPStruct)] Guid riid, out IntPtr ppv);
     [DllImport("shell32.dll")]
     public static extern int SHDoDragDrop(IntPtr hwnd, [MarshalAs(UnmanagedType.Interface)] System.Runtime.InteropServices.ComTypes.IDataObject pdtobj, IntPtr pdsrc, uint dwEffect, out uint pdwEffect);

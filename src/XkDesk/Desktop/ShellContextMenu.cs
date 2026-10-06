@@ -47,8 +47,13 @@ internal static class ShellContextMenu
         }
     }
 
+    /// <summary>外部接管取菜单对象（返回 null = 走默认）。映射格子空白处用它换成该目录的背景菜单。</summary>
+    public static Func<IReadOnlyList<DesktopItem>, IntPtr, IContextMenu?>? CreateOverride;
+
     private static IContextMenu? Create(IReadOnlyList<DesktopItem> items, IntPtr hwnd)
     {
+        var ov = CreateOverride?.Invoke(items, hwnd);
+        if (ov != null) return ov;
         var cm = CreateDefault(items, hwnd);
         if (cm != null) return cm;
         return items.Count == 0

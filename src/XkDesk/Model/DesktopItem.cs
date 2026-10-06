@@ -3,10 +3,13 @@ namespace XkDesk.Model;
 /// <summary>桌面项（来自桌面根 IShellFolder 枚举）。</summary>
 public sealed class DesktopItem
 {
+    /// <summary>唯一键：桌面项为解析名；映射格子内的项带「格子Id + 分隔符」前缀。</summary>
     public string Key { get; init; } = "";
+    /// <summary>所属来源：空 = 桌面；否则为映射格子 Id（同一 Container 的项共用同一父文件夹）。</summary>
+    public string Container { get; init; } = "";
     public string DisplayName { get; init; } = "";
     public string EditName { get; init; } = "";
-    /// <summary>相对桌面根的子 PIDL 完整字节拷贝。</summary>
+    /// <summary>绝对 PIDL（从桌面根起）的完整字节拷贝；桌面项即相对桌面根的子 PIDL。</summary>
     public byte[] Pidl { get; init; } = Array.Empty<byte>();
     public uint Attributes { get; init; }
     public string? FilePath { get; init; }

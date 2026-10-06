@@ -9,13 +9,18 @@ namespace XkDesk.Desktop;
 /// <summary>Shell 原生操作：重命名、拖出。（打开/删除/复制等走 ShellContextMenu.InvokeVerb。）</summary>
 internal static class ShellActions
 {
-    /// <summary>IShellFolder.SetNameOf 重命名（与 Explorer 一致处理隐藏扩展名、非法字符提示）。成功返回新的子 PIDL 字节与新 Key。</summary>
+    /// <summary>
+    /// 在项所在的文件夹（桌面根或映射目录）上用 IShellFolder.SetNameOf 重命名（与 Explorer 一致处理隐藏扩展名、非法字符提示）。
+    /// 成功返回新的绝对 PIDL 字节与新的解析名（不含映射格子前缀）。
+    /// </summary>
     public static (byte[] Pidl, string Key)? Rename(DesktopItem item, string newName, IntPtr hwnd)
     {
         var pidl = ShellApi.PidlFromBytes(item.Pidl);
+        var parent = ShellApi.BindParent(pidl, out var last);
         try
         {
-            var hr = ShellApi.Desktop.SetNameOf(hwnd, pidl, newName, ShellApi.SHGDN_INFOLDER | ShellApi.SHGDN_FOREDITING, out var newPidl);
+            if (parent == null) return null;
+            var hr = parent.SetNameOf(hwnd, last, newName, ShellApi.SHGDN_INFOLDER | ShellApi.SHGDN_FOREDITING, out var newPidl);
             if (hr < 0 || newPidl == IntPtr.Zero)
             {
                 Log.Info($"重命名未完成 {item.Key} → {newName} hr=0x{hr:X}");
@@ -23,8 +28,13 @@ internal static class ShellActions
             }
             try
             {
-                var key = ShellApi.GetDisplayName(ShellApi.Desktop, newPidl, ShellApi.SHGDN_FORPARSING);
-                return (ShellApi.PidlToBytes(newPidl), key);
+                var key = ShellApi.GetDisplayName(parent, newPidl, ShellApi.SHGDN_FORPARSING);
+                if (ShellApi.IsSingleId(pidl)) return (ShellApi.PidlToBytes(newPidl), key);
+                // 映射目录里的项：新的绝对 PIDL = 父绝对 PIDL + 新子 PIDL
+                Win32.ILRemoveLastID(pidl);
+                var full = Win32.ILCombine(pidl, newPidl);
+                try { return (ShellApi.PidlToBytes(full), key); }
+                finally { Win32.ILFree(full); }
             }
             finally
             {
@@ -33,6 +43,7 @@ internal static class ShellActions
         }
         finally
         {
+            ShellApi.ReleaseParent(parent);
             Marshal.FreeCoTaskMem(pidl);
         }
     }

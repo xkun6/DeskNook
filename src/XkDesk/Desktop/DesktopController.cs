@@ -1,3 +1,5 @@
+using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows.Threading;
 using XkDesk.Model;
 using XkDesk.Native;
@@ -7,8 +9,19 @@ namespace XkDesk.Desktop;
 
 internal enum NavDirection { Left, Right, Up, Down }
 
+/// <summary>项当前所在位置：Area = 显示器设备名（自由区）或 "box:格子Id"。</summary>
+internal readonly record struct ItemLoc(string Area, int Col, int Row);
+
+/// <summary>映射格子的运行时数据：该目录的项来源（含 SHChangeNotify 监听）。</summary>
+internal sealed class MappedRuntime
+{
+    public required DesktopItemSource Source { get; init; }
+    public required string Path { get; init; }
+    public Dictionary<string, DesktopItem> ByKey { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
 /// <summary>
-/// 桌面图标区的中枢：桌面项集合、布局、选择、剪切状态，以及所有操作（打开/删除/重命名/移动…）。
+/// 桌面图标区的中枢：桌面项集合、布局（自由区 + 格子）、选择、剪切状态，以及所有操作（打开/删除/重命名/移动…）。
 /// 各显示器的 DesktopSurface 只负责画和转发输入。全部在 UI 线程。
 /// </summary>
 internal sealed class DesktopController : IDisposable
@@ -21,13 +34,18 @@ internal sealed class DesktopController : IDisposable
     private readonly LayoutStore _store = new();
     private readonly DispatcherTimer _saveTimer;
     private readonly ClipboardWatcher _clipboard;
+    private readonly Dictionary<string, MappedRuntime> _mapped = new();
     private Dictionary<string, DesktopItem> _byKey = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, DesktopItem> _mappedByKey = new(StringComparer.OrdinalIgnoreCase);
     private List<MonitorInfo> _monitors = new();
     private double _cellExtraDip = DefaultCellExtra;
     private double _cellExtraYDip = 52; // 系统间距 100 - 图标 48
+    private BoxState? _menuBox;          // 菜单/粘贴期间：作用对象是这个映射格子的目录
 
     private DateTime _expectNewUntil = DateTime.MinValue;
-    private (string Monitor, int Col, int Row, DateTime Until)? _pendingDrop;
+    private PendingDrop? _pendingDrop;
+
+    private sealed record PendingDrop(string Monitor, int Col, int Row, string? BoxId, int Index, DateTime Until);
 
     /// <summary>可撤销的最近一次操作名（“删除”“复制”“移动”“重命名”）；没有则为 null，此时菜单不显示“撤消”。</summary>
     public string? UndoLabel { get; private set; }
@@ -50,16 +68,21 @@ internal sealed class DesktopController : IDisposable
     /// <summary>当前最近交互的宿主窗口（Shell 对话框/菜单的 owner）。</summary>
     public IntPtr ActiveHwnd { get; set; }
 
+    /// <summary>最近一次点击所在的格子（Ctrl+V 等键盘操作的目标）；点桌面空白处为 null。</summary>
+    public BoxState? ActiveBox { get; set; }
+
     /// <summary>本程序发起的拖拽中：被拖的 key；否则为 null。</summary>
     public IReadOnlyList<string>? DragKeys { get; private set; }
 
-    /// <summary>项集合/位置/图标大小变化，需要整体刷新视图。</summary>
+    /// <summary>项集合/位置/格子/图标大小变化，需要整体刷新视图。</summary>
     public event Action? ItemsChanged;
     public event Action? SelectionChanged;
     /// <summary>某项（null=全部）图标失效，需要重新取图。</summary>
     public event Action<string?>? IconInvalidated;
     public event Action? CutStateChanged;
     public event Action<string>? RenameRequested;
+    /// <summary>请求原位重命名某个格子的标题（参数为格子 Id）。</summary>
+    public event Action<string>? BoxRenameRequested;
 
     public DesktopController(Dispatcher dispatcher)
     {
@@ -69,11 +92,7 @@ internal sealed class DesktopController : IDisposable
         Source = new DesktopItemSource();
         Icons = new ShellIconCache(dispatcher);
         Source.Changed += OnSourceChanged;
-        Source.IconInvalidated += key =>
-        {
-            Icons.Invalidate(key);
-            IconInvalidated?.Invoke(key);
-        };
+        Source.IconInvalidated += OnIconInvalidated;
 
         _saveTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Background, (_, _) =>
         {
@@ -84,6 +103,13 @@ internal sealed class DesktopController : IDisposable
 
         _clipboard = new ClipboardWatcher();
         _clipboard.Changed += UpdateCutState;
+        ShellContextMenu.CreateOverride = CreateMenuOverride;
+    }
+
+    private void OnIconInvalidated(string? key)
+    {
+        Icons.Invalidate(key);
+        IconInvalidated?.Invoke(key);
     }
 
     // ------------------------------------------------------------ 初始化与网格
@@ -120,6 +146,7 @@ internal sealed class DesktopController : IDisposable
         }
 
         Reconcile();
+        SyncMapped();
         UpdateCutState();
         ScheduleSave();
     }
@@ -130,6 +157,7 @@ internal sealed class DesktopController : IDisposable
         _monitors = DesktopShell.GetMonitors();
         RebuildGrids();
         Reconcile();
+        SyncMapped();
         ScheduleSave();
         ItemsChanged?.Invoke();
     }
@@ -150,17 +178,87 @@ internal sealed class DesktopController : IDisposable
         if (res.Placed.Count > 0) Log.Info($"布局：新分配 {res.Placed.Count} 项位置");
     }
 
+    /// <summary>让映射格子的目录来源与布局里的映射格子保持一致（新增则监听，删除/改路径则释放）。</summary>
+    private void SyncMapped()
+    {
+        var want = Layout.Boxes.Where(b => b.Kind == BoxKind.Mapped && !string.IsNullOrEmpty(b.MappedPath)).ToDictionary(b => b.Id, b => b.MappedPath!);
+        foreach (var id in _mapped.Keys.ToList())
+        {
+            if (want.TryGetValue(id, out var path) && string.Equals(path, _mapped[id].Path, StringComparison.OrdinalIgnoreCase)) continue;
+            _mapped[id].Source.Dispose();
+            _mapped.Remove(id);
+        }
+        foreach (var (id, path) in want)
+        {
+            if (_mapped.ContainsKey(id)) continue;
+            try
+            {
+                var src = new DesktopItemSource(path, id);
+                var rt = new MappedRuntime { Source = src, Path = path };
+                rt.ByKey = src.Items.ToDictionary(i => i.Key, StringComparer.OrdinalIgnoreCase);
+                var boxId = id;
+                src.Changed += diff => OnMappedChanged(boxId, diff);
+                src.IconInvalidated += OnIconInvalidated;
+                _mapped[id] = rt;
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"创建映射目录来源失败：{path}", ex);
+            }
+        }
+        _mappedByKey = _mapped.Values.SelectMany(r => r.ByKey).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+        Selected.RemoveWhere(k => IsMappedKey(k) && !_mappedByKey.ContainsKey(k));
+    }
+
+    private static bool IsMappedKey(string key) => key.IndexOf(DesktopItemSource.KeySeparator) >= 0;
+
+    private void OnMappedChanged(string boxId, ItemDiffResult diff)
+    {
+        if (!_mapped.TryGetValue(boxId, out var rt)) return;
+        rt.ByKey = rt.Source.Items.ToDictionary(i => i.Key, StringComparer.OrdinalIgnoreCase);
+        _mappedByKey = _mapped.Values.SelectMany(r => r.ByKey).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (o, n) in diff.Renamed)
+        {
+            if (Selected.Remove(o.Key)) Selected.Add(n.Key);
+            if (AnchorKey == o.Key) AnchorKey = n.Key;
+        }
+        foreach (var r in diff.Removed) Selected.Remove(r.Key);
+
+        string? renameKey = null;
+        if (DateTime.UtcNow < _expectNewUntil && diff.Added.Count > 0)
+        {
+            renameKey = diff.Added.OrderByDescending(a => a.Modified).First().Key;
+            _expectNewUntil = DateTime.MinValue;
+            Selected.Clear();
+            Selected.Add(renameKey);
+            AnchorKey = renameKey;
+        }
+
+        ItemsChanged?.Invoke();
+        SelectionChanged?.Invoke();
+        if (renameKey != null)
+            _dispatcher.BeginInvoke(DispatcherPriority.Background, () => RenameRequested?.Invoke(renameKey));
+    }
+
     public MonitorGrid? GridOf(string monitor) => Grids.FirstOrDefault(g => g.Name == monitor);
 
     public IconSlot? SlotOf(string key) => Layout.FreeIcons.GetValueOrDefault(key);
 
-    public DesktopItem? ItemOf(string key) => _byKey.GetValueOrDefault(key);
+    public DesktopItem? ItemOf(string key) => _byKey.GetValueOrDefault(key) ?? _mappedByKey.GetValueOrDefault(key);
 
+    /// <summary>自由区里位于该显示器的项（格子里的项不含）。</summary>
     public IEnumerable<DesktopItem> ItemsOn(string monitor) =>
         Source.Items.Where(i => Layout.FreeIcons.TryGetValue(i.Key, out var s) && s.Monitor == monitor);
 
     public IReadOnlyList<DesktopItem> SelectedItems =>
-        Source.Items.Where(i => Selected.Contains(i.Key)).ToList();
+        Source.Items.Where(i => Selected.Contains(i.Key))
+            .Concat(_mappedByKey.Values.Where(i => Selected.Contains(i.Key)))
+            .ToList();
+
+    /// <summary>与第一项同一来源（桌面 / 同一个映射目录）的项：Shell 菜单与文件操作要求同一父文件夹。</summary>
+    private static IReadOnlyList<DesktopItem> SameParent(IReadOnlyList<DesktopItem> items) =>
+        items.Count == 0 ? items : items.Where(i => i.Container == items[0].Container).ToList();
 
     public void ScheduleSave()
     {
@@ -172,6 +270,38 @@ internal sealed class DesktopController : IDisposable
     {
         _saveTimer.Stop();
         _store.Save(Layout);
+    }
+
+    // ------------------------------------------------------------ 格子：查询
+
+    public BoxState? BoxOf(string id) => BoxOps.Find(Layout, id);
+
+    /// <summary>桌面项 key 所在的普通格子。</summary>
+    public BoxState? BoxOfKey(string key) => BoxOps.BoxOfKey(Layout, key);
+
+    /// <summary>格子实际显示的显示器与矩形（显示器缺失时落到主屏；折叠时只有标题栏）。</summary>
+    public (MonitorGrid Grid, BoxRect Rect)? EffectiveRect(BoxState box, bool ignoreCollapsed = false) =>
+        BoxGeometry.Effective(box, Grids, ignoreCollapsed);
+
+    public IEnumerable<BoxState> BoxesOn(string monitor) =>
+        Layout.Boxes.Where(b => EffectiveRect(b)?.Grid.Name == monitor);
+
+    public int BoxCols(BoxState box)
+    {
+        var eff = EffectiveRect(box, ignoreCollapsed: true);
+        return eff == null ? 1 : BoxGeometry.Cols(eff.Value.Rect.W, CellW);
+    }
+
+    /// <summary>格子内按显示顺序排列的项（普通格子：成员顺序或排序模式；映射格子：目录内容，默认按名称）。</summary>
+    public IReadOnlyList<DesktopItem> BoxItems(BoxState box)
+    {
+        if (box.Kind == BoxKind.Mapped)
+        {
+            if (!_mapped.TryGetValue(box.Id, out var rt)) return Array.Empty<DesktopItem>();
+            return ItemSorter.Sort(rt.Source.Items, box.SortMode == "" ? "name" : box.SortMode).ToList();
+        }
+        var list = box.ItemKeys.Select(k => _byKey.GetValueOrDefault(k)).Where(i => i != null).Select(i => i!).ToList();
+        return box.SortMode == "" ? list : ItemSorter.Sort(list, box.SortMode).ToList();
     }
 
     // ------------------------------------------------------------ 来源变化
@@ -197,10 +327,17 @@ internal sealed class DesktopController : IDisposable
 
         Reconcile();
 
-        // 拖入：新项落在鼠标释放的格子
+        // 拖入：新项落在鼠标释放处（自由区的格子，或某个普通格子里的插入位置）
         if (_pendingDrop is { } drop && DateTime.UtcNow < drop.Until && diff.Added.Count > 0)
         {
-            PlaceNear(diff.Added.Select(a => a.Key).ToList(), drop.Monitor, drop.Col, drop.Row);
+            var keys = diff.Added.Select(a => a.Key).ToList();
+            var box = drop.BoxId != null ? BoxOf(drop.BoxId) : null;
+            if (box is { Kind: BoxKind.Normal })
+            {
+                MaterializeOrder(box);
+                BoxOps.MoveToBox(Layout, keys, box, drop.Index);
+            }
+            else PlaceNear(keys, drop.Monitor, drop.Col, drop.Row);
             _pendingDrop = null;
         }
 
@@ -227,13 +364,18 @@ internal sealed class DesktopController : IDisposable
 
     /// <summary>拖入（外部）释放位置：随后出现的新项落在这里。</summary>
     public void SetPendingDrop(string monitor, int col, int row) =>
-        _pendingDrop = (monitor, col, row, DateTime.UtcNow + DropWindow);
+        _pendingDrop = new PendingDrop(monitor, col, row, null, 0, DateTime.UtcNow + DropWindow);
+
+    /// <summary>拖入普通格子：随后出现的新项放进该格子的 index 位置。</summary>
+    public void SetPendingDropBox(string boxId, int index) =>
+        _pendingDrop = new PendingDrop("", 0, 0, boxId, index, DateTime.UtcNow + DropWindow);
 
     public void Refresh()
     {
         Icons.Invalidate(null);
         IconInvalidated?.Invoke(null);
         Source.Refresh();
+        foreach (var rt in _mapped.Values) rt.Source.Refresh();
         ItemsChanged?.Invoke();
     }
 
@@ -267,53 +409,64 @@ internal sealed class DesktopController : IDisposable
 
     public void SelectAll() => SetSelection(Source.Items.Select(i => i.Key), AnchorKey);
 
-    /// <summary>Shift+点击：选中锚点与目标之间矩形区域内的项。</summary>
+    /// <summary>全部可见项的位置（自由区 + 各格子内的顺序位置）。</summary>
+    private Dictionary<string, ItemLoc> BuildLocs()
+    {
+        var d = new Dictionary<string, ItemLoc>(StringComparer.OrdinalIgnoreCase);
+        foreach (var it in Source.Items)
+            if (Layout.FreeIcons.TryGetValue(it.Key, out var s)) d[it.Key] = new ItemLoc(s.Monitor, s.Col, s.Row);
+        foreach (var box in Layout.Boxes)
+        {
+            var items = BoxItems(box);
+            var cols = BoxCols(box);
+            for (var i = 0; i < items.Count; i++) d[items[i].Key] = new ItemLoc("box:" + box.Id, i % cols, i / cols);
+        }
+        return d;
+    }
+
+    /// <summary>Shift+点击：选中锚点与目标之间矩形区域内的项（同一区域内）。</summary>
     public void SelectRange(string key)
     {
-        var anchor = AnchorKey != null ? SlotOf(AnchorKey) : null;
-        var target = SlotOf(key);
-        if (anchor == null || target == null || anchor.Monitor != target.Monitor)
+        var locs = BuildLocs();
+        if (AnchorKey == null || !locs.TryGetValue(AnchorKey, out var anchor) || !locs.TryGetValue(key, out var target) || anchor.Area != target.Area)
         {
             SelectOnly(key);
             return;
         }
         int c1 = Math.Min(anchor.Col, target.Col), c2 = Math.Max(anchor.Col, target.Col);
         int r1 = Math.Min(anchor.Row, target.Row), r2 = Math.Max(anchor.Row, target.Row);
-        var keys = Source.Items
-            .Where(i => Layout.FreeIcons.TryGetValue(i.Key, out var s) && s.Monitor == target.Monitor &&
-                        s.Col >= c1 && s.Col <= c2 && s.Row >= r1 && s.Row <= r2)
-            .Select(i => i.Key);
+        var keys = locs.Where(kv => kv.Value.Area == target.Area && kv.Value.Col >= c1 && kv.Value.Col <= c2 && kv.Value.Row >= r1 && kv.Value.Row <= r2)
+            .Select(kv => kv.Key);
         SetSelection(keys); // 保持锚点
     }
 
-    /// <summary>方向键：移动选择到该方向最近的项。</summary>
+    /// <summary>方向键：移动选择到该方向最近的项（同一区域内）。</summary>
     public void Navigate(NavDirection dir, bool extend)
     {
-        var withSlot = Source.Items.Where(i => Layout.FreeIcons.ContainsKey(i.Key)).ToList();
-        if (withSlot.Count == 0) return;
-        var from = (AnchorKey != null ? ItemOf(AnchorKey) : null) ?? SelectedItems.FirstOrDefault();
-        if (from == null || !Layout.FreeIcons.TryGetValue(from.Key, out var cur))
+        var locs = BuildLocs();
+        if (locs.Count == 0) return;
+        var fromKey = AnchorKey != null && locs.ContainsKey(AnchorKey) ? AnchorKey : SelectedItems.FirstOrDefault(i => locs.ContainsKey(i.Key))?.Key;
+        if (fromKey == null)
         {
-            var first = withSlot.OrderBy(i => Layout.FreeIcons[i.Key].Monitor != Grids.FirstOrDefault()?.Name)
-                .ThenBy(i => Layout.FreeIcons[i.Key].Col).ThenBy(i => Layout.FreeIcons[i.Key].Row).First();
+            var first = locs.OrderBy(kv => kv.Value.Area != Grids.FirstOrDefault()?.Name)
+                .ThenBy(kv => kv.Value.Col).ThenBy(kv => kv.Value.Row).First();
             SelectOnly(first.Key);
             return;
         }
 
+        var cur = locs[fromKey];
         string? best = null;
         var bestScore = double.MaxValue;
-        foreach (var it in withSlot)
+        foreach (var (k, loc) in locs)
         {
-            if (it.Key == from.Key) continue;
-            var s = Layout.FreeIcons[it.Key];
-            if (s.Monitor != cur.Monitor) continue;
-            int dc = s.Col - cur.Col, dr = s.Row - cur.Row;
+            if (k == fromKey || loc.Area != cur.Area) continue;
+            int dc = loc.Col - cur.Col, dr = loc.Row - cur.Row;
             var ok = dir switch { NavDirection.Left => dc < 0, NavDirection.Right => dc > 0, NavDirection.Up => dr < 0, _ => dr > 0 };
             if (!ok) continue;
             var score = dir is NavDirection.Left or NavDirection.Right
                 ? Math.Abs(dc) * 1000 + Math.Abs(dr)
                 : Math.Abs(dr) * 1000 + Math.Abs(dc);
-            if (score < bestScore) { bestScore = score; best = it.Key; }
+            if (score < bestScore) { bestScore = score; best = k; }
         }
         if (best == null) return;
         if (extend) { Selected.Add(best); AnchorKey = best; SelectionChanged?.Invoke(); }
@@ -324,28 +477,31 @@ internal sealed class DesktopController : IDisposable
 
     public void OpenSelected() => OpenItems(SelectedItems);
 
-    public void OpenItems(IReadOnlyList<DesktopItem> items) => ShellContextMenu.InvokeDefault(items, ActiveHwnd);
+    public void OpenItems(IReadOnlyList<DesktopItem> items) => ShellContextMenu.InvokeDefault(SameParent(items), ActiveHwnd);
 
     public void DeleteSelected(bool permanent)
     {
         var items = SelectedItems;
         if (items.Count == 0) return;
         if (!permanent) ArmUndo("删除");
-        ShellContextMenu.InvokeVerb(items, "delete", ActiveHwnd, shift: permanent);
+        foreach (var group in items.GroupBy(i => i.Container))
+            ShellContextMenu.InvokeVerb(group.ToList(), "delete", ActiveHwnd, shift: permanent);
     }
 
-    public void CopySelected() { var i = SelectedItems; if (i.Count > 0) ShellContextMenu.InvokeVerb(i, "copy", ActiveHwnd); }
-    public void CutSelected() { var i = SelectedItems; if (i.Count > 0) ShellContextMenu.InvokeVerb(i, "cut", ActiveHwnd); }
-    public void Paste()
-    {
-        ArmUndo(ClipboardWatcher.GetCutPaths().Count > 0 ? "移动" : "复制");
-        ShellContextMenu.InvokeVerb(Array.Empty<DesktopItem>(), "paste", ActiveHwnd);
-    }
+    public void CopySelected() { var i = SameParent(SelectedItems); if (i.Count > 0) ShellContextMenu.InvokeVerb(i, "copy", ActiveHwnd); }
+    public void CutSelected() { var i = SameParent(SelectedItems); if (i.Count > 0) ShellContextMenu.InvokeVerb(i, "cut", ActiveHwnd); }
 
-    public void PasteShortcut()
+    /// <summary>粘贴到当前目标：最近点击的是映射格子则粘贴到该目录，否则粘贴到桌面。</summary>
+    public void Paste() => PasteVerb("paste", ClipboardWatcher.GetCutPaths().Count > 0 ? "移动" : "复制");
+
+    public void PasteShortcut() => PasteVerb("pastelink", "创建快捷方式");
+
+    private void PasteVerb(string verb, string undoLabel)
     {
-        ArmUndo("创建快捷方式");
-        ShellContextMenu.InvokeVerb(Array.Empty<DesktopItem>(), "pastelink", ActiveHwnd);
+        ArmUndo(undoLabel);
+        _menuBox = ActiveBox is { Kind: BoxKind.Mapped } b ? b : null;
+        try { ShellContextMenu.InvokeVerb(Array.Empty<DesktopItem>(), verb, ActiveHwnd); }
+        finally { _menuBox = null; }
     }
 
     private void ArmUndo(string op)
@@ -363,24 +519,89 @@ internal sealed class DesktopController : IDisposable
         Win32.PostMessage(defView, 0x0111 /* WM_COMMAND */, (IntPtr)0x701B, IntPtr.Zero);
         UndoLabel = null;
     }
-    public void ShowProperties() => ShellContextMenu.InvokeVerb(SelectedItems, "properties", ActiveHwnd);
+    public void ShowProperties() => ShellContextMenu.InvokeVerb(SameParent(SelectedItems), "properties", ActiveHwnd);
 
     public void ShowMenu(IntPtr hwnd, Win32.POINT screenPoint, string monitor, IReadOnlyList<DesktopItem> items)
     {
         ActiveHwnd = hwnd;
         var ctx = new MenuContext
         {
-            Controller = this, Items = items, Hwnd = hwnd, ScreenPoint = screenPoint, Monitor = monitor,
+            Controller = this, Items = SameParent(items), Hwnd = hwnd, ScreenPoint = screenPoint, Monitor = monitor,
             Shift = (Win32.GetKeyState(Win32.VK_SHIFT) & 0x8000) != 0,
         };
-        ShellContextMenu.Show(ctx);
+        MenuExtensions.Current = ctx;
+        try { ShellContextMenu.Show(ctx); }
+        finally { MenuExtensions.Current = null; }
+    }
+
+    /// <summary>格子空白处/标题栏右键：普通格子只有自定义格子菜单；映射格子再并入该目录的原生背景菜单。</summary>
+    public void ShowBoxMenu(IntPtr hwnd, Win32.POINT screenPoint, string monitor, BoxState box)
+    {
+        ActiveHwnd = hwnd;
+        var ctx = new MenuContext
+        {
+            Controller = this, Items = Array.Empty<DesktopItem>(), Hwnd = hwnd, ScreenPoint = screenPoint, Monitor = monitor,
+            Shift = (Win32.GetKeyState(Win32.VK_SHIFT) & 0x8000) != 0, Box = box,
+        };
+        MenuExtensions.Current = ctx;
+        try
+        {
+            if (box.Kind == BoxKind.Mapped)
+            {
+                _menuBox = box;
+                try { ShellContextMenu.Show(ctx); }
+                finally { _menuBox = null; }
+            }
+            else BoxMenu.Show(ctx);
+        }
+        finally { MenuExtensions.Current = null; }
+    }
+
+    /// <summary>映射格子空白处的菜单对象：该目录的 IShellFolder.CreateViewObject(IContextMenu)。</summary>
+    private IContextMenu? CreateMenuOverride(IReadOnlyList<DesktopItem> items, IntPtr hwnd)
+    {
+        if (items.Count != 0 || _menuBox is not { Kind: BoxKind.Mapped } box || string.IsNullOrEmpty(box.MappedPath)) return null;
+        var folder = ShellApi.BindFolder(box.MappedPath, out var abs);
+        if (folder == null) return null;
+        try
+        {
+            var hr = folder.CreateViewObject(hwnd, ShellApi.IID_IContextMenu, out var ppv);
+            if (hr < 0 || ppv == IntPtr.Zero) { Log.Info($"映射目录取背景菜单失败 hr=0x{hr:X}"); return null; }
+            try { return Marshal.GetObjectForIUnknown(ppv) as IContextMenu; }
+            finally { Marshal.Release(ppv); }
+        }
+        finally
+        {
+            Marshal.ReleaseComObject(folder);
+            Win32.ILFree(abs);
+        }
+    }
+
+    /// <summary>映射格子目录的 IDropTarget（拖入映射格子空白处时交给它）。</summary>
+    public IDropTarget? CreateMappedDropTarget(BoxState box, IntPtr hwnd)
+    {
+        if (string.IsNullOrEmpty(box.MappedPath)) return null;
+        var folder = ShellApi.BindFolder(box.MappedPath, out var abs);
+        if (folder == null) return null;
+        try
+        {
+            var hr = folder.CreateViewObject(hwnd, ShellApi.IID_IDropTarget, out var ppv);
+            if (hr < 0 || ppv == IntPtr.Zero) return null;
+            try { return Marshal.GetObjectForIUnknown(ppv) as IDropTarget; }
+            finally { Marshal.Release(ppv); }
+        }
+        finally
+        {
+            Marshal.ReleaseComObject(folder);
+            Win32.ILFree(abs);
+        }
     }
 
     // ------------------------------------------------------------ 重命名
 
     public void BeginRename(string key)
     {
-        if (!_byKey.ContainsKey(key)) return;
+        if (ItemOf(key) == null) return;
         RenameRequested?.Invoke(key);
     }
 
@@ -395,14 +616,23 @@ internal sealed class DesktopController : IDisposable
         var res = ShellActions.Rename(item, newName, ActiveHwnd);
         if (res == null) return false;
 
-        var newKey = res.Value.Key;
+        var mapped = item.Container.Length > 0;
+        var newKey = mapped ? item.Container + DesktopItemSource.KeySeparator + res.Value.Key : res.Value.Key;
         UndoLabel = "重命名";
-        Source.AddRenameHint(key, newKey);
-        LayoutReconciler.Rename(Layout, key, newKey);
+        if (mapped && _mapped.TryGetValue(item.Container, out var rt))
+        {
+            rt.Source.AddRenameHint(key, newKey);
+            rt.Source.Refresh();
+        }
+        else
+        {
+            Source.AddRenameHint(key, newKey);
+            LayoutReconciler.Rename(Layout, key, newKey);
+            Source.Refresh();
+        }
         Selected.Remove(key);
         Selected.Add(newKey);
         AnchorKey = newKey;
-        Source.Refresh();
         ScheduleSave();
         ItemsChanged?.Invoke();
         SelectionChanged?.Invoke();
@@ -411,14 +641,19 @@ internal sealed class DesktopController : IDisposable
 
     // ------------------------------------------------------------ 位置 / 视图
 
-    private HashSet<(int, int)> Occupied(string monitor, ICollection<string>? exclude = null) =>
-        Source.Items
+    /// <summary>某显示器上已被占用的格子：自由图标 + 格子覆盖的区域。</summary>
+    private HashSet<(int, int)> Occupied(string monitor, ICollection<string>? exclude = null)
+    {
+        var set = Source.Items
             .Where(i => (exclude == null || !exclude.Contains(i.Key)) &&
                         Layout.FreeIcons.TryGetValue(i.Key, out var s) && s.Monitor == monitor)
             .Select(i => (Layout.FreeIcons[i.Key].Col, Layout.FreeIcons[i.Key].Row))
             .ToHashSet();
+        set.UnionWith(BoxGeometry.CoveredCells(Layout, Grids, monitor));
+        return set;
+    }
 
-    /// <summary>把一组项依次放到目标格附近的空位。</summary>
+    /// <summary>把一组项依次放到目标格附近的空位（自由区）。</summary>
     private void PlaceNear(IReadOnlyList<string> keys, string monitor, int col, int row)
     {
         var grid = GridOf(monitor);
@@ -433,25 +668,37 @@ internal sealed class DesktopController : IDisposable
     }
 
     /// <summary>
-    /// 把选中项一起移动：锚点项落到 (col,row)，其余项保持相对位置；目标被占用或越界则就近找空位。
+    /// 把选中的桌面项移到自由区：锚点项落到 (col,row)，其余自由图标保持相对位置；
+    /// 来自格子的项（没有自由位置）就近放在目标格附近。目标被占用或越界则就近找空位。
     /// </summary>
     public void MoveSelection(string anchorKey, string monitor, int col, int row)
     {
         var grid = GridOf(monitor);
+        if (grid == null) return;
         var anchor = SlotOf(anchorKey);
-        if (grid == null || anchor == null) return;
 
-        var moving = SelectedItems.Where(i => Layout.FreeIcons.ContainsKey(i.Key)).Select(i => i.Key).ToList();
-        if (!moving.Contains(anchorKey)) moving = new List<string> { anchorKey };
-        int dCol = col - anchor.Col, dRow = row - anchor.Row;
-        var origin = moving.ToDictionary(k => k, k => (Layout.FreeIcons[k].Col, Layout.FreeIcons[k].Row), StringComparer.OrdinalIgnoreCase);
+        var all = SelectedItems.Where(i => i.Container.Length == 0).Select(i => i.Key).ToList();
+        if (!all.Contains(anchorKey, StringComparer.OrdinalIgnoreCase)) all = new List<string> { anchorKey };
+        var withSlot = anchor != null ? all.Where(k => Layout.FreeIcons.ContainsKey(k) && Source.Items.Any(i => i.Key == k)).ToList() : new List<string>();
+        var withoutSlot = all.Where(k => !withSlot.Contains(k, StringComparer.OrdinalIgnoreCase)).ToList();
 
-        var occupied = Occupied(monitor, moving);
-        foreach (var k in moving.OrderBy(k => origin[k].Col).ThenBy(k => origin[k].Row))
+        var occupied = Occupied(monitor, all);
+        if (anchor != null)
         {
-            var (c, r) = (origin[k].Col + dCol, origin[k].Row + dRow);
-            if (c < 0 || r < 0 || c >= grid.Cols || r >= grid.Rows || occupied.Contains((c, r)))
-                (c, r) = GridLayout.NearestEmpty(grid.Size, occupied, c, r);
+            int dCol = col - anchor.Col, dRow = row - anchor.Row;
+            var origin = withSlot.ToDictionary(k => k, k => (Layout.FreeIcons[k].Col, Layout.FreeIcons[k].Row), StringComparer.OrdinalIgnoreCase);
+            foreach (var k in withSlot.OrderBy(k => origin[k].Col).ThenBy(k => origin[k].Row))
+            {
+                var (c, r) = (origin[k].Col + dCol, origin[k].Row + dRow);
+                if (c < 0 || r < 0 || c >= grid.Cols || r >= grid.Rows || occupied.Contains((c, r)))
+                    (c, r) = GridLayout.NearestEmpty(grid.Size, occupied, c, r);
+                LayoutReconciler.Move(Layout, k, monitor, c, r);
+                occupied.Add((c, r));
+            }
+        }
+        foreach (var k in withoutSlot)
+        {
+            var (c, r) = GridLayout.NearestEmpty(grid.Size, occupied, col, row);
             LayoutReconciler.Move(Layout, k, monitor, c, r);
             occupied.Add((c, r));
         }
@@ -470,15 +717,15 @@ internal sealed class DesktopController : IDisposable
         ItemsChanged?.Invoke();
     }
 
-    /// <summary>按指定方式重新排列：每个显示器内的项按排序结果从左上角按列依次填充。</summary>
+    /// <summary>按指定方式重新排列：每个显示器内的自由项按排序结果从左上角按列依次填充（避开格子占用的区域）。</summary>
     public void SortBy(string key)
     {
         Layout.View.SortKey = key;
         foreach (var grid in Grids)
         {
             var items = ItemsOn(grid.Name).ToList();
-            var sorted = Sort(items, key).ToList();
-            var occupied = new HashSet<(int, int)>();
+            var sorted = ItemSorter.Sort(items, key).ToList();
+            var occupied = BoxGeometry.CoveredCells(Layout, Grids, grid.Name);
             foreach (var it in sorted)
             {
                 var (c, r) = GridLayout.FirstEmpty(grid.Size, occupied);
@@ -490,19 +737,196 @@ internal sealed class DesktopController : IDisposable
         ItemsChanged?.Invoke();
     }
 
-    private static IEnumerable<DesktopItem> Sort(List<DesktopItem> items, string key)
+    // ------------------------------------------------------------ 格子：创建 / 修改 / 解散
+
+    private string UniqueBoxName(string baseName)
     {
-        // 虚拟项（此电脑、回收站…）始终在最前，保持枚举顺序
-        var virtuals = items.Where(i => i.IsVirtual);
-        var real = items.Where(i => !i.IsVirtual);
-        IEnumerable<DesktopItem> sorted = key switch
+        if (!Layout.Boxes.Any(b => b.Name == baseName)) return baseName;
+        for (var i = 2; ; i++)
+            if (!Layout.Boxes.Any(b => b.Name == $"{baseName} {i}")) return $"{baseName} {i}";
+    }
+
+    /// <summary>在 screenPoint 附近找空地创建格子（cols × 内容 rows）。</summary>
+    private BoxState CreateBox(string name, BoxKind kind, string? mappedPath, string monitor, Win32.POINT screenPoint,
+        int cols, int rows, ICollection<string>? excludeKeys)
+    {
+        var grid = GridOf(monitor) ?? Grids.First();
+        var wantCol = (int)Math.Floor((screenPoint.X - grid.WorkLeft) / grid.Scale / CellW);
+        var wantRow = (int)Math.Floor((screenPoint.Y - grid.WorkTop) / grid.Scale / CellH);
+        wantCol = Math.Clamp(wantCol, 0, Math.Max(0, grid.Cols - cols));
+        wantRow = Math.Clamp(wantRow, 0, Math.Max(0, grid.Rows - 1));
+
+        cols = Math.Min(cols, grid.Cols);
+        var (wCells, hCells) = BoxGeometry.CellsFor(cols, rows, CellH);
+        var blocked = Occupied(grid.Name, excludeKeys);
+        var spot = BoxGeometry.FindSpot(grid.Size, blocked, wCells, hCells, wantCol, wantRow)
+                   ?? (wantCol, Math.Clamp(wantRow, 0, Math.Max(0, grid.Rows - hCells)));
+
+        var box = new BoxState
         {
-            "size" => real.OrderBy(i => i.IsFolder ? 0 : 1).ThenBy(i => i.Size).ThenBy(i => i.DisplayName, Comparer<string>.Create(Win32.StrCmpLogicalW)),
-            "type" => real.OrderBy(i => i.IsFolder ? "" : i.Extension).ThenBy(i => i.DisplayName, Comparer<string>.Create(Win32.StrCmpLogicalW)),
-            "date" => real.OrderByDescending(i => i.Modified).ThenBy(i => i.DisplayName, Comparer<string>.Create(Win32.StrCmpLogicalW)),
-            _ => real.OrderBy(i => i.IsFolder ? 0 : 1).ThenBy(i => i.DisplayName, Comparer<string>.Create(Win32.StrCmpLogicalW)),
+            Id = BoxOps.NewId(),
+            Name = name,
+            Kind = kind,
+            MappedPath = mappedPath,
+            Monitor = grid.Name,
+            Rect = new BoxRect(spot.Item1 * CellW, spot.Item2 * CellH, BoxGeometry.WidthFor(cols, CellW), BoxGeometry.HeightFor(rows, CellH)),
         };
-        return virtuals.Concat(sorted);
+        Layout.Boxes.Add(box);
+        Log.Info($"新建格子 {kind} \"{name}\" id={box.Id} 位置=({box.Rect.X},{box.Rect.Y}) 尺寸=({box.Rect.W}x{box.Rect.H}) 显示器={grid.Name}");
+        return box;
+    }
+
+    private void AfterBoxChange()
+    {
+        Reconcile();
+        SyncMapped();
+        ScheduleSave();
+        ItemsChanged?.Invoke();
+        SelectionChanged?.Invoke();
+    }
+
+    public BoxState NewBox(IntPtr hwnd, Win32.POINT screenPoint, string monitor)
+    {
+        var box = CreateBox(UniqueBoxName("新格子"), BoxKind.Normal, null, monitor, screenPoint,
+            BoxGeometry.DefaultCols, BoxGeometry.DefaultRows, null);
+        AfterBoxChange();
+        return box;
+    }
+
+    /// <summary>用选中的桌面项新建普通格子。</summary>
+    public BoxState NewBoxFromItems(IntPtr hwnd, Win32.POINT screenPoint, string monitor, IReadOnlyList<DesktopItem> items)
+    {
+        var keys = items.Where(i => i.Container.Length == 0).Select(i => i.Key).ToList();
+        var rows = Math.Max(BoxGeometry.DefaultRows, (keys.Count + BoxGeometry.DefaultCols - 1) / BoxGeometry.DefaultCols);
+        var box = CreateBox(UniqueBoxName("新格子"), BoxKind.Normal, null, monitor, screenPoint, BoxGeometry.DefaultCols, rows, keys);
+        BoxOps.MoveToBox(Layout, keys, box, int.MaxValue);
+        AfterBoxChange();
+        return box;
+    }
+
+    /// <summary>选择一个目录并新建映射格子；取消返回 null。</summary>
+    public BoxState? NewMappedBox(IntPtr hwnd, Win32.POINT screenPoint, string monitor)
+    {
+        var path = PickFolder(hwnd);
+        return path == null ? null : NewMappedBoxAt(path, screenPoint, monitor);
+    }
+
+    public BoxState NewMappedBoxAt(string path, Win32.POINT screenPoint, string monitor)
+    {
+        path = path.TrimEnd('\\', '/') is { Length: > 0 } p ? p : path;
+        var name = Path.GetFileName(path);
+        if (string.IsNullOrEmpty(name)) name = path;
+        var box = CreateBox(UniqueBoxName(name), BoxKind.Mapped, path, monitor, screenPoint,
+            BoxGeometry.DefaultCols, BoxGeometry.DefaultRows, null);
+        AfterBoxChange();
+        return box;
+    }
+
+    /// <summary>IFileOpenDialog(FOS_PICKFOLDERS)：WPF 的 OpenFolderDialog 即其封装。</summary>
+    private static string? PickFolder(IntPtr hwnd)
+    {
+        var dlg = new Microsoft.Win32.OpenFolderDialog { Title = "选择要映射的文件夹" };
+        var owner = hwnd != IntPtr.Zero ? System.Windows.Interop.HwndSource.FromHwnd(hwnd)?.RootVisual as System.Windows.Window : null;
+        var ok = owner != null ? dlg.ShowDialog(owner) : dlg.ShowDialog();
+        return ok == true && !string.IsNullOrEmpty(dlg.FolderName) ? dlg.FolderName : null;
+    }
+
+    /// <summary>移动/缩放结束后提交矩形（展开状态的完整尺寸）。冲突的自由图标由对账就近挪开。</summary>
+    public void SetBoxRect(BoxState box, string monitor, BoxRect rect)
+    {
+        box.Monitor = monitor;
+        box.Rect = rect;
+        Reconcile();
+        ScheduleSave();
+        ItemsChanged?.Invoke();
+    }
+
+    public void RenameBox(BoxState box, string name)
+    {
+        name = name.Trim();
+        if (name.Length == 0 || name == box.Name) return;
+        box.Name = name;
+        ScheduleSave();
+        ItemsChanged?.Invoke();
+    }
+
+    public void BeginRenameBox(string boxId) => BoxRenameRequested?.Invoke(boxId);
+
+    public void ToggleBoxCollapsed(BoxState box)
+    {
+        box.Collapsed = !box.Collapsed;
+        Reconcile(); // 展开后覆盖到的自由图标需要让开
+        ScheduleSave();
+        ItemsChanged?.Invoke();
+    }
+
+    public void ToggleBoxLocked(BoxState box)
+    {
+        box.Locked = !box.Locked;
+        ScheduleSave();
+        ItemsChanged?.Invoke();
+    }
+
+    /// <summary>设置排序方式（"" = 手动顺序，仅普通格子；切到手动时把当前显示顺序固化为成员顺序）。</summary>
+    public void SetBoxSort(BoxState box, string mode)
+    {
+        if (box.SortMode == mode) return;
+        if (mode == "") MaterializeOrder(box);
+        box.SortMode = mode;
+        ScheduleSave();
+        ItemsChanged?.Invoke();
+    }
+
+    /// <summary>把按排序模式显示的顺序固化到 ItemKeys，并转为手动顺序（之后的插入位置才有意义）。</summary>
+    private void MaterializeOrder(BoxState box)
+    {
+        if (box.Kind != BoxKind.Normal || box.SortMode == "") return;
+        var shown = BoxItems(box).Select(i => i.Key).ToList();
+        var rest = box.ItemKeys.Where(k => !shown.Contains(k, StringComparer.OrdinalIgnoreCase));
+        box.ItemKeys = shown.Concat(rest).ToList();
+        box.SortMode = "";
+    }
+
+    /// <summary>解散（删除）格子：普通格子的图标回到自由区原位置附近；映射格子直接消失，不动任何文件。</summary>
+    public void DissolveBox(BoxState box)
+    {
+        var placed = BoxOps.Dissolve(Layout, box.Id, Source.Items.Select(i => i.Key).ToList(), Grids);
+        Log.Info($"解散格子 \"{box.Name}\"（{box.Kind}），{placed.Count} 个图标回到桌面");
+        if (ActiveBox?.Id == box.Id) ActiveBox = null;
+        AfterBoxChange();
+    }
+
+    /// <summary>把桌面项移进普通格子（只改布局，不动文件）。index = 移动前的插入位置，int.MaxValue = 末尾。</summary>
+    public void MoveKeysToBox(IReadOnlyList<string> keys, BoxState box, int index)
+    {
+        if (box.Kind != BoxKind.Normal) return;
+        var desktopKeys = keys.Where(k => _byKey.ContainsKey(k)).ToList();
+        if (desktopKeys.Count == 0) return;
+        MaterializeOrder(box);
+        BoxOps.MoveToBox(Layout, desktopKeys, box, index);
+        Layout.View.SortKey = "";
+        ScheduleSave();
+        ItemsChanged?.Invoke();
+    }
+
+    public void MoveItemsToBox(IReadOnlyList<DesktopItem> items, BoxState box) =>
+        MoveKeysToBox(items.Select(i => i.Key).ToList(), box, int.MaxValue);
+
+    /// <summary>把选中项移出普通格子，回到格子附近的自由区空位。</summary>
+    public void MoveItemsOutOfBoxes(IReadOnlyList<DesktopItem> items)
+    {
+        foreach (var group in items.Select(i => i.Key).Where(k => BoxOfKey(k) != null).GroupBy(k => BoxOfKey(k)!))
+        {
+            var box = group.Key;
+            var eff = EffectiveRect(box, ignoreCollapsed: true);
+            if (eff == null) continue;
+            var col = (int)Math.Floor(eff.Value.Rect.X / CellW + 1e-6);
+            var row = (int)Math.Floor(eff.Value.Rect.Y / CellH + 1e-6);
+            var keys = group.ToList();
+            BoxOps.RemoveFromBoxes(Layout, keys);
+            PlaceNear(keys, eff.Value.Grid.Name, col, row);
+        }
+        AfterBoxChange();
     }
 
     // ------------------------------------------------------------ 拖放
@@ -511,19 +935,28 @@ internal sealed class DesktopController : IDisposable
     public void StartDrag(string anchorKey, IntPtr hwnd)
     {
         if (!Selected.Contains(anchorKey)) SelectOnly(anchorKey);
-        var items = SelectedItems;
+        var anchorItem = ItemOf(anchorKey);
+        if (anchorItem == null) return;
+        // Shell 数据对象要求同一父文件夹：只拖与锚点同来源的项
+        var items = SelectedItems.Where(i => i.Container == anchorItem.Container).ToList();
         if (items.Count == 0) return;
+        if (items.Count != Selected.Count) SetSelection(items.Select(i => i.Key), anchorKey);
         DragKeys = items.Select(i => i.Key).ToList();
         DragAnchorKey = anchorKey;
+        DragContainer = anchorItem.Container;
         try { ShellActions.DoDragDrop(items, hwnd); }
         finally
         {
             DragKeys = null;
             DragAnchorKey = null;
+            DragContainer = "";
         }
     }
 
     public string? DragAnchorKey { get; private set; }
+
+    /// <summary>被拖项的来源：空 = 桌面（自由区/普通格子）；否则为映射格子 Id。</summary>
+    public string DragContainer { get; private set; } = "";
 
     // ------------------------------------------------------------ 剪切状态
 
@@ -540,7 +973,11 @@ internal sealed class DesktopController : IDisposable
     public void Dispose()
     {
         Flush();
+        if (ShellContextMenu.CreateOverride == (Func<IReadOnlyList<DesktopItem>, IntPtr, IContextMenu?>)CreateMenuOverride)
+            ShellContextMenu.CreateOverride = null;
         _clipboard.Dispose();
+        foreach (var rt in _mapped.Values) rt.Source.Dispose();
+        _mapped.Clear();
         Source.Dispose();
         Icons.Dispose();
     }
