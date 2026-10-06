@@ -71,6 +71,14 @@ DeskNook 通过 `ShowWindow(SW_HIDE)` 隐藏系统 `SysListView32`，而不是�
 - 透明用 DWM 方案，不用 `0x052C` 消息（见 [desktop-layer.md](desktop-layer.md)）。
 - PerMonitorV2 DPI：像素 ↔ DIP 转换按各显示器 `Scale`，不要用全局缩放；副屏在左/上时坐标为负。
 
+**界面卡顿**
+
+- 新建文件/文件夹后要过 1~6 秒才显示：
+  - 现象：桌面右键“新建 ▸ 文件夹/文本文档”后，新图标很久才出现。枚举刷新本身只要十几毫秒。
+  - 根因：`DesktopSurface.OnRenameRequested` 里同步 `SetForegroundWindow(_hwnd)` 在 UI 线程上阻塞 1.4~6 秒。调用前前台是 Explorer 里的菜单代理窗口 `DeskNook.MenuProxy`，其所在的 Explorer 桌面线程正在执行 DefView 的新建并进入自己的重命名，要等它处理完失活 `SetForegroundWindow` 才返回；期间 UI 线程冻结，图标回调也被堵。
+  - 修复位置：`DesktopSurface.BringToForegroundThen`（后台线程 `SetForegroundWindow`，拿到前台后才聚焦重命名框并挂失焦提交）；`BringToForeground` 同步版只留给用户点击路径。
+  - 排查日志：`原位重命名框已显示：…（排队 X ms，调用前前台=…）` 与 `原位重命名框获得焦点：…（距显示 X ms）` 两行的时间差；`SetForegroundWindow（后台线程）耗时 N ms` 出现表示抢前台被阻塞（此时 UI 应仍流畅）；若又见 `SetForegroundWindow 耗时`（无“后台线程”）说明有新路径在 UI 线程同步抢前台。
+
 **菜单**
 
 - 不能把 Shell 菜单在 DeskNook 进程里弹出来替代：第三方扩展要求在 Explorer 的桌面线程里运行，所以才有代理。

@@ -620,6 +620,33 @@ internal sealed class DesktopSurface : Canvas
         if (!IsKeyboardFocusWithin) Focus();
     }
 
+    /// <summary>
+    /// 同 <see cref="BringToForeground"/>，但 SetForegroundWindow 放到后台线程调用，完成后在 UI 线程执行 <paramref name="then"/>。
+    /// 前台窗口属于别的线程且该线程正忙时（如新建后 Explorer 桌面线程在执行 DefView 新建并进入自身重命名），
+    /// SetForegroundWindow 会阻塞到对方处理完失活，实测新建后 1.4~6 秒，同步调用会冻结 UI 线程。
+    /// </summary>
+    private void BringToForegroundThen(Action then)
+    {
+        _c.ActiveHwnd = _hwnd;
+        if (Win32.GetForegroundWindow() == _hwnd) { then(); return; }
+        var hwnd = _hwnd;
+        var t0 = Stopwatch.GetTimestamp();
+        Task.Run(() =>
+        {
+            try
+            {
+                var ok = Win32.SetForegroundWindow(hwnd);
+                var ms = (long)Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
+                if (ms > 100) Log.Info($"SetForegroundWindow（后台线程）耗时 {ms} ms，返回 {ok}");
+                Dispatcher.BeginInvoke(then);
+            }
+            catch (Exception ex)
+            {
+                Log.Info($"后台抢前台失败：{ex.Message}");
+            }
+        });
+    }
+
     // ------------------------------------------------------------ 键盘
 
     /// <summary>由宿主窗口 PreviewKeyDown 转发。返回 true 表示已处理。</summary>
@@ -719,26 +746,25 @@ internal sealed class DesktopSurface : Canvas
             if (ke.Key == Key.Enter) { EndRename(commit: true); ke.Handled = true; }
             else if (ke.Key == Key.Escape) { EndRename(commit: false); ke.Handled = true; }
         };
-        box.LostKeyboardFocus += (_, _) => EndRename(commit: true);
 
         var fg = Win32.GetForegroundWindow();
         Win32.GetWindowThreadProcessId(fg, out var fgPid);
-        var tFg = Stopwatch.GetTimestamp();
-        BringToForeground();
-        var tFocus = Stopwatch.GetTimestamp();
-        box.Focus();
-        Keyboard.Focus(box);
-        var tEnd = Stopwatch.GetTimestamp();
-        var name = item.EditName;
-        var dot = name.LastIndexOf('.');
-        if (!item.IsFolder && item.FilePath != null && dot > 0) box.Select(0, dot);
-        else box.SelectAll();
         var queueText = queueMs < 0 ? "排队 -（非新建路径）ms" : $"排队 {queueMs} ms";
-        Log.Info($"原位重命名框已显示：{key} 键盘焦点={box.IsKeyboardFocused}（{queueText}，" +
-                 $"抢前台 {(long)Stopwatch.GetElapsedTime(tFg, tFocus).TotalMilliseconds} ms，" +
-                 $"聚焦 {(long)Stopwatch.GetElapsedTime(tFocus, tEnd).TotalMilliseconds} ms，" +
-                 $"总 {(long)Stopwatch.GetElapsedTime(tStart, Stopwatch.GetTimestamp()).TotalMilliseconds} ms，" +
-                 $"调用前前台=0x{fg.ToInt64():X}(进程Id {fgPid})）");
+        Log.Info($"原位重命名框已显示：{key}（{queueText}，调用前前台=0x{fg.ToInt64():X}(进程Id {fgPid})）");
+
+        // 拿到前台后才聚焦并挂失焦提交：抢前台过程中的焦点抖动不能触发提交
+        BringToForegroundThen(() =>
+        {
+            if (_renameBox != box || _renameDone) return;
+            box.LostKeyboardFocus += (_, _) => EndRename(commit: true);
+            box.Focus();
+            Keyboard.Focus(box);
+            var name = item.EditName;
+            var dot = name.LastIndexOf('.');
+            if (!item.IsFolder && item.FilePath != null && dot > 0) box.Select(0, dot);
+            else box.SelectAll();
+            Log.Info($"原位重命名框获得焦点：{key} 键盘焦点={box.IsKeyboardFocused}（距显示 {(long)Stopwatch.GetElapsedTime(tStart).TotalMilliseconds} ms）");
+        });
     }
 
     private void EndRename(bool commit)

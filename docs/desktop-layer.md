@@ -82,7 +82,7 @@ child 模式没有这两层（不需要 `HWND_BOTTOM`）。
 
 ## 键盘焦点
 
-宿主窗口是 `NOACTIVATE`，点击不会自动激活。`DesktopSurface.BringToForeground()` 在鼠标按下/右键时显式 `SetForegroundWindow(hwnd)` + `Focus()`。键盘事件在宿主窗口的 `PreviewKeyDown` 里转发给 `DesktopSurface.HandleKey`。`Activated/Deactivated` 驱动选中项在失焦时变灰（`IconItemControl.WindowActive`）。
+宿主窗口是 `NOACTIVATE`，点击不会自动激活。`DesktopSurface.BringToForeground()` 在鼠标按下/右键时显式 `SetForegroundWindow(hwnd)` + `Focus()`；重命名路径（`OnRenameRequested`）用 `DesktopSurface.BringToForegroundThen` 在后台线程异步抢前台，避免前台属于忙碌的 Explorer 线程时同步调用冻结 UI。键盘事件在宿主窗口的 `PreviewKeyDown` 里转发给 `DesktopSurface.HandleKey`。`Activated/Deactivated` 驱动选中项在失焦时变灰（`IconItemControl.WindowActive`）。
 
 菜单期间（v1 回退路径）宿主窗口的 `WndProc` 先把 `WM_INITMENUPOPUP/DRAWITEM/MEASUREITEM/MENUCHAR/MENUSELECT` 交给 `ShellContextMenu.TryHandleMessage` 转发给 `IContextMenu2/3`。代理路径下这些消息在 Explorer 里的代理窗口过程里处理。
 
