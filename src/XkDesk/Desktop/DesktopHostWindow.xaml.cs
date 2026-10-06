@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using XkDesk.Native;
 using XkDesk.Services;
+using XkDesk.Views;
 
 namespace XkDesk.Desktop;
 
@@ -15,15 +16,17 @@ internal enum AttachMode { Owner, Child }
 /// <summary>透明方案：layered = AllowsTransparency 分层窗口；dwm = DWM 扩展边框（非分层）。</summary>
 internal enum TransparencyMode { Layered, Dwm }
 
-/// <summary>每个显示器一个的桌面层宿主窗口（阶段 0 仅画测试内容）。</summary>
+/// <summary>每个显示器一个的桌面层宿主窗口，内容是本显示器的图标画布 DesktopSurface。</summary>
 public partial class DesktopHostWindow : Window
 {
     private readonly MonitorInfo _monitor;
     private readonly DesktopInfo _desktop;
     private readonly AttachMode _attach;
     private readonly TransparencyMode _transparency;
-    private readonly DispatcherTimer _clock;
     private readonly DispatcherTimer _zTimer;
+    private readonly DesktopController _controller;
+    private readonly DesktopSurface _surface;
+    private DesktopDropTarget? _dropTarget;
 
     // 委托必须保存为字段，防止被 GC 回收导致回调崩溃
     private readonly Win32.WinEventProc _winEventProc;
@@ -31,8 +34,9 @@ public partial class DesktopHostWindow : Window
     private IntPtr _hwnd;
     private int _zFixLogCount;
 
-    internal DesktopHostWindow(MonitorInfo monitor, DesktopInfo desktop, AttachMode attach, TransparencyMode transparency)
+    internal DesktopHostWindow(MonitorInfo monitor, DesktopInfo desktop, AttachMode attach, TransparencyMode transparency, DesktopController controller)
     {
+        _controller = controller;
         _monitor = monitor;
         _desktop = desktop;
         _attach = attach;
@@ -44,13 +48,15 @@ public partial class DesktopHostWindow : Window
         // 透明方案必须在窗口显示前设置
         AllowsTransparency = transparency == TransparencyMode.Layered;
 
-        MonitorText.Text = $"显示器：{monitor.DeviceName}{(monitor.IsPrimary ? "（主）" : "")}";
-        ModeText.Text = $"挂载：{attach.ToString().ToLowerInvariant()}  透明：{transparency.ToString().ToLowerInvariant()}";
-        UpdateClock();
-
-        _clock = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        _clock.Tick += (_, _) => UpdateClock();
-        _clock.Start();
+        UseLayoutRounding = true;
+        _surface = new DesktopSurface(controller, monitor);
+        Content = _surface;
+        Activated += (_, _) => _surface.SetWindowActive(true);
+        Deactivated += (_, _) => _surface.SetWindowActive(false);
+        PreviewKeyDown += (_, e) =>
+        {
+            if (_surface.HandleKey(e)) e.Handled = true;
+        };
 
         _zTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
         _zTimer.Tick += (_, _) =>
@@ -58,17 +64,7 @@ public partial class DesktopHostWindow : Window
             _zTimer.Stop();
             ReassertBottom("前台变化(延迟复查)");
         };
-
-        MouseLeftButtonDown += (_, e) =>
-        {
-            if (e.ClickCount == 2)
-                Log.Info($"[{monitor.DeviceName}] 双击空白处命中");
-        };
     }
-
-    private void UpdateClock() => TimeText.Text = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-
-    private void OnExitClick(object sender, RoutedEventArgs e) => ((App)Application.Current).ExitApp();
 
     protected override void OnSourceInitialized(EventArgs e)
     {
@@ -92,6 +88,9 @@ public partial class DesktopHostWindow : Window
 
         if (_attach == AttachMode.Owner) AttachAsOwner();
         else AttachAsChild();
+
+        _surface.AttachWindow(_hwnd);
+        _dropTarget = new DesktopDropTarget(_controller, _surface, _hwnd);
 
         Log.Info($"[{_monitor.DeviceName}] 宿主窗口 hwnd=0x{_hwnd:X} 挂载={_attach} 透明={_transparency} " +
                  $"物理矩形=({_monitor.Bounds.Left},{_monitor.Bounds.Top},{_monitor.Bounds.Width}x{_monitor.Bounds.Height})");
@@ -178,6 +177,13 @@ public partial class DesktopHostWindow : Window
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        // 右键菜单期间：把菜单消息转给 IContextMenu2/3（“发送到”“新建”等子菜单、图标绘制）
+        if (ShellContextMenu.TryHandleMessage(msg, wParam, lParam, out var menuResult))
+        {
+            handled = true;
+            return menuResult;
+        }
+
         // owner 模式：有人想把本窗口提到上层时，强制改为 HWND_BOTTOM 插入（仅改结构体，不再调 SetWindowPos，无递归）
         if (msg == Win32.WM_WINDOWPOSCHANGING && _attach == AttachMode.Owner)
         {
@@ -195,8 +201,10 @@ public partial class DesktopHostWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
-        _clock.Stop();
         _zTimer.Stop();
+        _dropTarget?.Dispose();
+        _dropTarget = null;
+        _surface.Detach();
         if (_eventHook != IntPtr.Zero)
         {
             Win32.UnhookWinEvent(_eventHook);

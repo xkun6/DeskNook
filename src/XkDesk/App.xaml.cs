@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Threading;
 using XkDesk.Desktop;
+using XkDesk.Native;
 using XkDesk.Services;
 
 namespace XkDesk;
@@ -11,7 +12,8 @@ public partial class App : Application
 
     private Mutex? _mutex;
     private AttachMode _attach = AttachMode.Owner;
-    private TransparencyMode _transparency = TransparencyMode.Layered;
+    private TransparencyMode _transparency = TransparencyMode.Dwm; // 阶段 0 实测选定 owner + dwm
+    private DesktopController? _controller;
     private readonly List<DesktopHostWindow> _hosts = new();
     private ShellMessageWindow? _messageWindow;
     private DispatcherTimer? _reattachTimer;
@@ -22,6 +24,15 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // XkDesk.exe --exit：通知已运行的实例退出（自动化测试用），自己不启动
+        if (e.Args.Any(a => a.Equals("--exit", StringComparison.OrdinalIgnoreCase)))
+        {
+            var target = Win32.FindWindow(null, ShellMessageWindow.WindowName);
+            if (target != IntPtr.Zero) Win32.PostMessage(target, Win32.RegisterWindowMessage(ShellMessageWindow.ExitMessageName), IntPtr.Zero, IntPtr.Zero);
+            Shutdown();
+            return;
+        }
 
         // 单实例：第二个实例直接退出
         _mutex = new Mutex(true, @"Local\XkDesk.SingleInstance", out var created);
@@ -57,6 +68,15 @@ public partial class App : Application
         _messageWindow = new ShellMessageWindow();
         _messageWindow.TaskbarCreated += () => StartReattach("收到 TaskbarCreated（Explorer 重启）");
         _messageWindow.DisplayChanged += OnDisplayChanged;
+        _messageWindow.ExitRequested += () =>
+        {
+            Log.Info("收到 --exit 退出请求");
+            ExitApp();
+        };
+
+        Win32.OleInitialize(IntPtr.Zero); // 剪贴板 / 拖放需要 OLE
+        _controller = new DesktopController(Dispatcher);
+        _controller.Initialize(DesktopShell.FindDesktop().ListView);
 
         if (!RebuildHosts("启动")) StartReattach("启动时未找到桌面窗口");
     }
@@ -84,11 +104,12 @@ public partial class App : Application
         if (!info.IsValid) return false;
 
         DesktopShell.HideIcons(info);
+        _controller!.UpdateMonitors();
         foreach (var monitor in DesktopShell.GetMonitors())
         {
             try
             {
-                var host = new DesktopHostWindow(monitor, info, _attach, _transparency);
+                var host = new DesktopHostWindow(monitor, info, _attach, _transparency, _controller!);
                 host.Closed += OnHostClosed;
                 _hosts.Add(host);
                 host.Show();
@@ -202,6 +223,8 @@ public partial class App : Application
         _displayTimer?.Stop();
         DesktopShell.RestoreIcons();
         CloseHosts();
+        _controller?.Dispose();
+        _controller = null;
         Shutdown();
     }
 

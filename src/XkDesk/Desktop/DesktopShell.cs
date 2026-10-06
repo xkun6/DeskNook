@@ -12,8 +12,8 @@ internal readonly record struct DesktopInfo(IntPtr Progman, IntPtr DefView, IntP
         $"Progman=0x{Progman:X}, DefView=0x{DefView:X}(父=0x{DefViewParent:X} {Win32.GetClassNameString(DefViewParent)}), ListView=0x{ListView:X}";
 }
 
-/// <summary>显示器信息：Bounds 为物理像素的虚拟屏幕坐标。</summary>
-internal readonly record struct MonitorInfo(string DeviceName, Win32.RECT Bounds, bool IsPrimary);
+/// <summary>显示器信息：Bounds/Work 为物理像素的虚拟屏幕坐标，Scale 为 DPI 缩放（1.0 = 100%）。</summary>
+internal readonly record struct MonitorInfo(string DeviceName, Win32.RECT Bounds, bool IsPrimary, Win32.RECT Work, double Scale);
 
 /// <summary>定位桌面窗口、隐藏/恢复系统桌面图标（仅 ShowWindow，不写注册表）。</summary>
 internal static class DesktopShell
@@ -110,9 +110,13 @@ internal static class DesktopShell
         {
             var mi = new Win32.MONITORINFOEX { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<Win32.MONITORINFOEX>() };
             if (Win32.GetMonitorInfo(hMon, ref mi))
-                list.Add(new MonitorInfo(mi.szDevice, mi.rcMonitor, (mi.dwFlags & Win32.MONITORINFOF_PRIMARY) != 0));
+            {
+                var scale = Win32.GetDpiForMonitor(hMon, 0, out var dpiX, out _) == 0 && dpiX > 0 ? dpiX / 96.0 : 1.0;
+                list.Add(new MonitorInfo(mi.szDevice, mi.rcMonitor, (mi.dwFlags & Win32.MONITORINFOF_PRIMARY) != 0, mi.rcWork, scale));
+            }
             return true;
         }, IntPtr.Zero);
+        list.Sort((a, b) => b.IsPrimary.CompareTo(a.IsPrimary)); // 主显示器排第一（布局分配新项用）
         return list;
     }
 }

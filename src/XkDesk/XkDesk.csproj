@@ -13,4 +13,8 @@
     <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="XkDesk.Tests" />
+  </ItemGroup>
+
 </Project>

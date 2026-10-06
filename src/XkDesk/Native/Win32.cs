@@ -4,7 +4,7 @@ using System.Text;
 namespace XkDesk.Native;
 
 /// <summary>所有 P/Invoke 集中于此（仅 x64，使用 *LongPtr 入口）。</summary>
-internal static class Win32
+internal static partial class Win32
 {
     // ShowWindow
     public const int SW_HIDE = 0;

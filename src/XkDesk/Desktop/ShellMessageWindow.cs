@@ -12,15 +12,21 @@ internal sealed class ShellMessageWindow : IDisposable
 {
     private readonly HwndSource _source;
     private readonly uint _taskbarCreatedMsg;
+    private readonly uint _exitMsg;
+
+    public const string WindowName = "XkDeskMessageWindow";
+    public const string ExitMessageName = "XkDesk.ExitRequest";
 
     public event Action? TaskbarCreated;
     public event Action? DisplayChanged;
+    public event Action? ExitRequested;
 
     public ShellMessageWindow()
     {
         _taskbarCreatedMsg = Win32.RegisterWindowMessage("TaskbarCreated");
+        _exitMsg = Win32.RegisterWindowMessage(ExitMessageName);
         // WS_POPUP 且不带 WS_VISIBLE：隐藏的普通顶层窗口
-        var p = new HwndSourceParameters("XkDeskMessageWindow")
+        var p = new HwndSourceParameters(WindowName)
         {
             WindowStyle = unchecked((int)Win32.WS_POPUP),
             ExtendedWindowStyle = (int)Win32.WS_EX_TOOLWINDOW,
@@ -40,6 +46,7 @@ internal sealed class ShellMessageWindow : IDisposable
         {
             if (msg == _taskbarCreatedMsg) TaskbarCreated?.Invoke();
             else if (msg == Win32.WM_DISPLAYCHANGE) DisplayChanged?.Invoke();
+            else if (msg == _exitMsg) ExitRequested?.Invoke();
         }
         catch (Exception ex)
         {

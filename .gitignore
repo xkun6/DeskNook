@@ -10,3 +10,6 @@ obj/
 TestResults/
 .idea/
 .vscode/
+
+# 自动化测试输出
+tools/test/out/
