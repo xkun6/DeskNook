@@ -680,10 +680,10 @@ internal sealed class DesktopSurface : Canvas
     private void OnRenameRequested(string key)
     {
         var tStart = Stopwatch.GetTimestamp();
+        if (!_controls.TryGetValue(key, out var ctl)) return;
         var posted = _c.RenamePostedAt;
         _c.RenamePostedAt = 0;
         var queueMs = posted == 0 ? -1 : (long)Stopwatch.GetElapsedTime(posted, tStart).TotalMilliseconds;
-        if (!_controls.TryGetValue(key, out var ctl)) return;
         EndRename(commit: false);
 
         var item = ctl.Item;
