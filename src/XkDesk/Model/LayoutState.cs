@@ -54,6 +54,8 @@ public sealed class ViewSettings
     public int IconSize { get; set; } = 48;
     /// <summary>"" | name | size | type | date</summary>
     public string SortKey { get; set; } = "";
+    /// <summary>双击/菜单隐藏了图标与格子（重启后保持）。</summary>
+    public bool IconsHidden { get; set; }
 }
 
 public sealed class LayoutState

@@ -13,3 +13,6 @@ TestResults/
 
 # 自动化测试输出
 tools/test/out/
+
+# 发布输出
+dist/

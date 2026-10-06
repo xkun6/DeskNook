@@ -1,8 +1,10 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 using XkDesk.Desktop;
 using XkDesk.Native;
 using XkDesk.Services;
+using XkDesk.Views;
 
 namespace XkDesk;
 
@@ -18,6 +20,9 @@ public partial class App : Application
     private ShellMessageWindow? _messageWindow;
     private ExplorerMenuProxy? _menuProxy;
     private MenuPipeServer? _pipeServer;
+    private TrayIcon? _tray;
+    private static readonly string RunningFlag = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "XkDesk", "running.flag");
     private DispatcherTimer? _reattachTimer;
     private DispatcherTimer? _displayTimer;
     private DateTime _reattachDeadline;
@@ -53,10 +58,12 @@ public partial class App : Application
         {
             _mutex.Dispose();
             _mutex = null;
+            NotifyFirstInstance();
             Shutdown();
             return;
         }
 
+        CheckLastRunAndMarkRunning();
         ParseArgs(e.Args);
         Log.Info($"xk-desk 启动：挂载={_attach} 透明={_transparency} 参数=[{string.Join(" ", e.Args)}]");
 
@@ -80,6 +87,12 @@ public partial class App : Application
 
         _messageWindow = new ShellMessageWindow();
         _messageWindow.TaskbarCreated += () => StartReattach("收到 TaskbarCreated（Explorer 重启）");
+        _messageWindow.TaskbarCreated += () => _tray?.Recreate();
+        _messageWindow.SettingsRequested += () =>
+        {
+            Log.Info("收到第二个实例的请求：打开设置窗口");
+            if (_controller != null) SettingsWindow.ShowSingleton(_controller);
+        };
         _messageWindow.DisplayChanged += OnDisplayChanged;
         _messageWindow.ExitRequested += () =>
         {
@@ -91,12 +104,19 @@ public partial class App : Application
         _controller = new DesktopController(Dispatcher);
         _controller.Initialize(DesktopShell.FindDesktop().ListView);
 
+        try { Win32.AllowDarkModeForWindow(_messageWindow.Handle, true); } catch { /* 忽略 */ }
+        MenuIcons.EnsureExtracted();
+        _tray = new TrayIcon(_messageWindow, _controller, AutoStart.Default, () => SettingsWindow.ShowSingleton(_controller), ExitApp);
+        _tray.Recreate();
+
         // 右键菜单 v2：注册 Shell 扩展、启动菜单管道、确保 Explorer 里的菜单代理已加载
         if (!ExplorerMenuProxy.Disabled)
         {
             var registered = ShellExtRegistrar.EnsureRegistered();
             _menuProxy = new ExplorerMenuProxy(Dispatcher, _controller, _messageWindow.Handle);
             _controller.MenuProxy = _menuProxy;
+            _menuProxy.ComponentOutdated += (_, _) => Dispatcher.BeginInvoke(() =>
+                _tray?.ShowBalloon("xk-desk", "已更新右键菜单组件，重启资源管理器后生效"));
             _pipeServer = new MenuPipeServer(Dispatcher, _controller, _menuProxy);
             _pipeServer.Start();
             if (registered) _menuProxy.EnsureLoadedAsync("启动");
@@ -105,6 +125,38 @@ public partial class App : Application
         }
 
         if (!RebuildHosts("启动")) StartReattach("启动时未找到桌面窗口");
+    }
+
+    /// <summary>第二个实例：让首实例打开设置窗口（并把前台权限让给它）。</summary>
+    private static void NotifyFirstInstance()
+    {
+        try
+        {
+            var target = Win32.FindWindow(null, ShellMessageWindow.WindowName);
+            if (target == IntPtr.Zero) return;
+            Win32.GetWindowThreadProcessId(target, out var pid);
+            Win32.AllowSetForegroundWindow(pid);
+            Win32.PostMessage(target, Win32.RegisterWindowMessage(ShellMessageWindow.ShowSettingsMessageName), IntPtr.Zero, IntPtr.Zero);
+        }
+        catch { /* 忽略 */ }
+    }
+
+    /// <summary>崩溃兜底：上次若异常退出（标记文件残留）只记日志；然后写入本次的运行标记。</summary>
+    private static void CheckLastRunAndMarkRunning()
+    {
+        try
+        {
+            if (File.Exists(RunningFlag))
+                Log.Info($"检测到上次异常退出（运行标记残留：{File.GetLastWriteTime(RunningFlag):yyyy-MM-dd HH:mm:ss}），正常继续启动");
+            Directory.CreateDirectory(Path.GetDirectoryName(RunningFlag)!);
+            File.WriteAllText(RunningFlag, Environment.ProcessId.ToString());
+        }
+        catch (Exception ex) { Log.Info($"写入运行标记失败（忽略）：{ex.Message}"); }
+    }
+
+    private static void ClearRunningFlag()
+    {
+        try { File.Delete(RunningFlag); } catch { /* 忽略 */ }
     }
 
     private void ParseArgs(string[] args)
@@ -117,6 +169,7 @@ public partial class App : Application
             else if (a == "--transparency=dwm") _transparency = TransparencyMode.Dwm;
             else if (a == "--transparency=layered") _transparency = TransparencyMode.Layered;
             else if (a == "--no-proxy") ExplorerMenuProxy.Disabled = true;
+            else if (a == "--simulate-outdated-proxy") ExplorerMenuProxy.SimulateOutdated = true;
             else Log.Info($"忽略未知参数：{arg}");
         }
     }
@@ -251,6 +304,8 @@ public partial class App : Application
         _displayTimer?.Stop();
         DesktopShell.RestoreIcons();
         CloseHosts();
+        _tray?.Dispose();
+        _tray = null;
         _pipeServer?.Dispose();
         _pipeServer = null;
         _controller?.Dispose();
@@ -262,6 +317,7 @@ public partial class App : Application
     {
         Log.Info("SessionEnding");
         DesktopShell.RestoreIcons();
+        ClearRunningFlag();
         base.OnSessionEnding(e);
     }
 
@@ -269,7 +325,9 @@ public partial class App : Application
     {
         _exiting = true;
         DesktopShell.RestoreIcons();
+        _tray?.Dispose();
         _messageWindow?.Dispose();
+        if (_mutex != null) ClearRunningFlag(); // 只有首实例（持有互斥量）才会写过标记
         if (_mutex != null)
         {
             try { _mutex.ReleaseMutex(); } catch { /* 非拥有线程等情况忽略 */ }

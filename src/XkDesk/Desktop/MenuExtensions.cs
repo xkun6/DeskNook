@@ -85,6 +85,9 @@ internal static class MenuExtensions
 {
     public const uint FirstCommandId = 0x8000;
 
+    /// <summary>菜单图标：嵌入资源释放到本地后的 ICO 路径（见 MenuIcons）。</summary>
+    private static string I(string name) => MenuIcons.PathOf(name);
+
     private static bool ClipboardHasFiles()
     {
         try { return System.Windows.Clipboard.ContainsFileDropList(); }
@@ -200,38 +203,38 @@ internal static class MenuExtensions
         Sep(MenuPosition.BeforeNew, c => c.IsDesktopBackground),
         new()
         {
-            Title = "一键整理(&Z)", Position = MenuPosition.BeforeNew, Applies = c => c.IsDesktopBackground,
+            Title = "一键整理(&Z)", Position = MenuPosition.BeforeNew, Icon = I("organize"), Applies = c => c.IsDesktopBackground,
             Handler = c => c.Controller.OrganizeAll(),
         },
         new()
         {
-            Title = "xk-desk(&X)", Position = MenuPosition.BeforeNew, Applies = c => c.IsDesktopBackground,
+            Title = "xk-desk(&X)", Position = MenuPosition.BeforeNew, Icon = I("menu-app"), Applies = c => c.IsDesktopBackground,
             Children = new CustomMenuItem[]
             {
-                new() { Title = "新建格子(&B)", Handler = c => c.Controller.NewBox(c.Hwnd, c.ScreenPoint, c.Monitor) },
-                new() { Title = "新建映射格子(&M)…", Handler = c => c.Controller.NewMappedBox(c.Hwnd, c.ScreenPoint, c.Monitor) },
-                new() { Title = "一键整理(&Z)", Handler = c => c.Controller.OrganizeAll() },
-                new() { Title = "撤销整理(&U)", Enabled = c => c.Controller.CanUndoOrganize, Handler = c => c.Controller.UndoOrganize() },
+                new() { Title = "新建格子(&B)", Icon = I("box-new"), Handler = c => c.Controller.NewBox(c.Hwnd, c.ScreenPoint, c.Monitor) },
+                new() { Title = "新建映射格子(&M)…", Icon = I("as-box"), Handler = c => c.Controller.NewMappedBox(c.Hwnd, c.ScreenPoint, c.Monitor) },
+                new() { Title = "一键整理(&Z)", Icon = I("organize"), Handler = c => c.Controller.OrganizeAll() },
+                new() { Title = "撤销整理(&U)", Icon = I("undo"), Enabled = c => c.Controller.CanUndoOrganize, Handler = c => c.Controller.UndoOrganize() },
                 new() { IsSeparator = true },
-                new() { Title = "xk-desk 设置…", Handler = c => Views.SettingsWindow.ShowSingleton(c.Controller) },
-                new() { Title = "退出 xk-desk", Handler = _ => ((App)System.Windows.Application.Current).ExitApp() },
+                new() { Title = "xk-desk 设置…", Icon = I("settings"), Handler = c => Views.SettingsWindow.ShowSingleton(c.Controller) },
+                new() { Title = "退出 xk-desk", Icon = I("exit"), Handler = _ => ((App)System.Windows.Application.Current).ExitApp() },
             },
         },
 
         // ---- 图标：整理类（桌面、格子、普通资源管理器窗口里都出现）----
         new()
         {
-            Title = "整理至新格子(&G)", Position = MenuPosition.Bottom, InExplorer = true, Applies = CanOrganizeToBox,
+            Title = "整理至新格子(&G)", Position = MenuPosition.Bottom, Icon = I("box-new"), InExplorer = true, Applies = CanOrganizeToBox,
             Handler = c => c.Controller.NewBoxFromItems(c.Hwnd, c.ScreenPoint, c.Monitor, DesktopItemsOf(c)),
         },
         new()
         {
-            Title = "整理至新文件夹(&F)", Position = MenuPosition.Bottom, InExplorer = true, Applies = CanOrganizeToFolder,
+            Title = "整理至新文件夹(&F)", Position = MenuPosition.Bottom, Icon = I("folder-new"), InExplorer = true, Applies = CanOrganizeToFolder,
             Handler = c => c.Controller.MoveToNewFolder(c.SelectedPaths, renameAfter: c.InXkDesk),
         },
         new()
         {
-            Title = "作为桌面格子显示(&S)", Position = MenuPosition.Bottom, InExplorer = true, Applies = CanShowAsBox,
+            Title = "作为桌面格子显示(&S)", Position = MenuPosition.Bottom, Icon = I("as-box"), InExplorer = true, Applies = CanShowAsBox,
             Handler = c => c.Controller.NewMappedBoxAt(c.SelectedPaths[0], c.ScreenPoint, c.Monitor),
         },
 
@@ -256,8 +259,10 @@ internal static class MenuExtensions
         // ---- 图标：打开所在位置（仅 XkDesk 内）----
         new()
         {
-            Title = "打开所在位置(&L)", Position = MenuPosition.Bottom,
-            Applies = c => c.InXkDesk && !c.IsBackground && c.Items.Count == 1 && c.Items[0].FilePath != null,
+            Title = "打开所在位置(&L)", Position = MenuPosition.Bottom, Icon = I("locate"),
+            // 只对格子 / 映射格子里的项显示：桌面自由区的项本来就在桌面上
+            Applies = c => c.InXkDesk && !c.IsBackground && c.Items.Count == 1 && c.Items[0].FilePath != null
+                           && (c.Items[0].Container.Length > 0 || c.Controller.BoxOfKey(c.Items[0].Key) != null),
             Handler = c => Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{c.Items[0].FilePath}\"") { UseShellExecute = true }),
         },
     };

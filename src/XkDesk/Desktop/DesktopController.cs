@@ -96,10 +96,24 @@ internal sealed class DesktopController : IDisposable
     /// <summary>XkDesk 的图标与格子是否显示（“查看 ▸ 显示桌面图标”的状态来源）。系统 ListView 始终保持隐藏。</summary>
     public bool IconsVisible { get; private set; } = true;
 
+    /// <summary>格子背景不透明度（设置里的滑块，可实时预览）。</summary>
+    public double BoxOpacity { get; private set; } = AppSettings.DefaultBoxOpacity;
+    /// <summary>外观（格子透明度）变化，需要刷新已有格子。</summary>
+    public event Action? AppearanceChanged;
+
+    /// <summary>实时预览格子透明度（不保存；取消设置时用已保存的值再预览一次即可还原）。</summary>
+    public void PreviewBoxOpacity(double opacity)
+    {
+        BoxOpacity = Math.Clamp(opacity, AppSettings.MinBoxOpacity, 1.0);
+        AppearanceChanged?.Invoke();
+    }
+
     public void SetIconsVisible(bool visible)
     {
         if (IconsVisible == visible) return;
         IconsVisible = visible;
+        Layout.View.IconsHidden = !visible;
+        ScheduleSave();
         Log.Info($"XkDesk 图标显示状态：{(visible ? "显示" : "隐藏")}");
         IconsVisibleChanged?.Invoke();
     }
@@ -114,6 +128,7 @@ internal sealed class DesktopController : IDisposable
         var size = (int)Math.Round(m.Value.IconSizePx / scale);
         _cellExtraDip = Math.Max(8, (m.Value.SpacingX - m.Value.IconSizePx) / scale);
         _cellExtraYDip = Math.Max(8, (m.Value.SpacingY - m.Value.IconSizePx) / scale);
+        if (Settings.IconSizeMode != "system") { Settings.IconSizeMode = "system"; _settingsStore.Save(Settings); }
         Log.Info($"同步系统桌面视图：图标={size}（原 {Layout.View.IconSize}）间距=({m.Value.SpacingX},{m.Value.SpacingY})px");
         Layout.View.IconSize = size;
         RebuildGrids();
@@ -127,6 +142,8 @@ internal sealed class DesktopController : IDisposable
         _dispatcher = dispatcher;
         Layout = _store.Load();
         Settings = _settingsStore.Load();
+        IconsVisible = !Layout.View.IconsHidden;
+        BoxOpacity = Settings.BoxOpacity;
         _organizeUndo = _undoStore.Load();
 
         Source = new DesktopItemSource();
@@ -168,7 +185,9 @@ internal sealed class DesktopController : IDisposable
             _cellExtraDip = Math.Max(8, (sys.SpacingXPx - sys.IconSizePx) / primaryScale);
             _cellExtraYDip = Math.Max(8, (sys.SpacingYPx - sys.IconSizePx) / primaryScale);
             if (!Layout.SystemPositionsImported) Layout.View.IconSize = (int)Math.Round(sys.IconSizePx / primaryScale);
+            else if (AppSettings.IconSizeOf(Settings.IconSizeMode) == null) Layout.View.IconSize = (int)Math.Round(sys.IconSizePx / primaryScale); // 跟随系统
         }
+        if (AppSettings.IconSizeOf(Settings.IconSizeMode) is { } fixedSize) Layout.View.IconSize = fixedSize;
         RebuildGrids();
 
         if (!Layout.SystemPositionsImported && sys != null && sys.Positions.Count > 0)
@@ -859,6 +878,17 @@ internal sealed class DesktopController : IDisposable
         return box;
     }
 
+    /// <summary>托盘菜单用：在主显示器工作区中央新建空格子（图标隐藏时先显示）。</summary>
+    public BoxState? NewBoxCentered()
+    {
+        if (_monitors.Count == 0) return null;
+        var m = _monitors.FirstOrDefault(x => x.IsPrimary);
+        if (m.DeviceName == null) m = _monitors[0];
+        SetIconsVisible(true);
+        var pt = new Win32.POINT { X = m.Work.Left + m.Work.Width / 2, Y = m.Work.Top + m.Work.Height / 2 };
+        return NewBox(IntPtr.Zero, pt, m.DeviceName);
+    }
+
     /// <summary>用选中的桌面项新建普通格子。</summary>
     public BoxState NewBoxFromItems(IntPtr hwnd, Win32.POINT screenPoint, string monitor, IReadOnlyList<DesktopItem> items)
     {
@@ -1071,8 +1101,12 @@ internal sealed class DesktopController : IDisposable
     /// <summary>保存并启用新的设置（设置窗口调用）。</summary>
     public void ApplySettings(AppSettings settings)
     {
+        settings.Normalize();
         Settings = settings;
         _settingsStore.Save(settings);
+        PreviewBoxOpacity(settings.BoxOpacity);
+        if (AppSettings.IconSizeOf(settings.IconSizeMode) is { } size) SetIconSize(size);
+        else SyncFromSystemView();
     }
 
     // ------------------------------------------------------------ 拖放

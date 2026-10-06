@@ -17,8 +17,21 @@ namespace XkDesk.Views;
 /// </summary>
 internal sealed class BoxControl : Canvas
 {
-    private static readonly Brush BgNormal = Frozen(new SolidColorBrush(Color.FromArgb(0xB4, 0x1B, 0x20, 0x2A)));
-    private static readonly Brush BgHover = Frozen(new SolidColorBrush(Color.FromArgb(0xCC, 0x26, 0x2C, 0x3A)));
+    private Brush _bgNormal = Brushes.Transparent;
+    private Brush _bgHover = Brushes.Transparent;
+    private bool _chromeReady;
+    private Brush BgNormal => _bgNormal;
+    private Brush BgHover => _bgHover;
+
+    /// <summary>按设置的格子透明度（背景不透明度 0.2~1.0）重建背景画刷；悬停时略深。</summary>
+    public void ApplyOpacity(double opacity)
+    {
+        var a = (byte)Math.Round(Math.Clamp(opacity, 0, 1) * 255);
+        var h = (byte)Math.Min(255, a + 0x18);
+        _bgNormal = Frozen(new SolidColorBrush(Color.FromArgb(a, 0x1B, 0x20, 0x2A)));
+        _bgHover = Frozen(new SolidColorBrush(Color.FromArgb(h, 0x26, 0x2C, 0x3A)));
+        if (_chromeReady) UpdateChrome();
+    }
     private static readonly Brush BorderNormal = Frozen(new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)));
     private static readonly Brush BorderHover = Frozen(new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)));
     private static readonly Brush BorderDrop = Frozen(new SolidColorBrush(Color.FromArgb(0xE0, 0x5A, 0xB0, 0xFF)));
@@ -74,8 +87,10 @@ internal sealed class BoxControl : Canvas
         SnapsToDevicePixels = true;
         Background = Brushes.Transparent; // 整个外接矩形可命中（圆角之外的角落也要能拖拽缩放）
 
+        ApplyOpacity(controller.BoxOpacity);
         _bg = new Border { CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1), Background = BgNormal, BorderBrush = BorderNormal };
         Children.Add(_bg);
+        _chromeReady = true;
 
         _titleLine = new Border { Height = 1, Background = TitleLine, IsHitTestVisible = false };
         SetTop(_titleLine, BoxGeometry.TitleH - 1);

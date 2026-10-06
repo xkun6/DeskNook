@@ -354,7 +354,20 @@ static HBITMAP LoadViaWic(const std::wstring& path, int size) {
     HBITMAP hbm = nullptr;
     do {
         if (FAILED(fac->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &dec))) break;
-        if (FAILED(dec->GetFrame(0, &frame))) break;
+        // ICO 含多个尺寸的帧：挑不小于目标尺寸的最小帧（没有则取最大帧）；其他格式只有第 0 帧
+        UINT count = 0, pick = 0, pickW = 0;
+        if (FAILED(dec->GetFrameCount(&count)) || count == 0) break;
+        if (count > 16) count = 16;
+        for (UINT i = 0; i < count; i++) {
+            IWICBitmapFrameDecode* f = nullptr;
+            UINT w = 0, h = 0;
+            if (FAILED(dec->GetFrame(i, &f)) || !f) continue;
+            f->GetSize(&w, &h);
+            f->Release();
+            bool better = pickW == 0 || (pickW < (UINT)size && w > pickW) || (w >= (UINT)size && w < pickW);
+            if (better) { pick = i; pickW = w; }
+        }
+        if (FAILED(dec->GetFrame(pick, &frame))) break;
         if (FAILED(fac->CreateBitmapScaler(&scaler))) break;
         if (FAILED(scaler->Initialize(frame, size, size, WICBitmapInterpolationModeFant))) break;
         if (FAILED(fac->CreateFormatConverter(&conv))) break;

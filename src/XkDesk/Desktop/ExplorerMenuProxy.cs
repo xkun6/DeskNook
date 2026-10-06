@@ -26,6 +26,9 @@ internal sealed class ExplorerMenuProxy
     /// <summary>--no-proxy：不使用代理，菜单一律走进程内回退路径。</summary>
     public static bool Disabled { get; set; }
 
+    /// <summary>--simulate-outdated-proxy：测试用，把检测到的代理版本当作旧版（验证日志警告与托盘气泡）。</summary>
+    public static bool SimulateOutdated { get; set; }
+
     /// <summary>代理最近一次加载是哪种方式生效：shellview / hook / 已存在 / 失败。</summary>
     public string LoadMethod { get; private set; } = "未加载";
 
@@ -58,7 +61,35 @@ internal sealed class ExplorerMenuProxy
         t.Start();
     }
 
+    /// <summary>Explorer 里的代理窗口标题是它所属 DLL 的文件名（含内容哈希），与我们注册的不一致就说明加载的是旧版。</summary>
+    internal static bool IsOutdated(string? proxyTitle, string wantDllName) =>
+        wantDllName.Length > 0 && !string.IsNullOrEmpty(proxyTitle) && !string.Equals(proxyTitle, wantDllName, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>检测到 Explorer 内仍是旧版代理组件时触发一次（参数：Explorer 内版本，期望版本），在后台线程。</summary>
+    public event Action<string, string>? ComponentOutdated;
+    private bool _outdatedReported;
+
+    private void CheckVersion(string reason)
+    {
+        var dll = ShellExtRegistrar.RegisteredDll;
+        var want = dll == null ? "" : Path.GetFileName(dll);
+        var hwnd = FindProxyWindow();
+        if (hwnd == IntPtr.Zero) return;
+        var title = SimulateOutdated ? "XkShellExt.00000000.dll" : Win32.GetWindowTextString(hwnd);
+        if (!IsOutdated(title, want)) { Log.Info($"菜单组件版本一致（{reason}）：{title}"); return; }
+        Log.Info($"警告：Explorer 内的菜单组件是旧版（{title}），当前版本为 {want}；重启资源管理器后生效");
+        if (_outdatedReported) return;
+        _outdatedReported = true;
+        ComponentOutdated?.Invoke(title, want);
+    }
+
     private void EnsureLoaded(string reason)
+    {
+        EnsureLoadedCore(reason);
+        CheckVersion(reason);
+    }
+
+    private void EnsureLoadedCore(string reason)
     {
         var dll = ShellExtRegistrar.RegisteredDll;
         var want = dll == null ? "" : Path.GetFileName(dll);

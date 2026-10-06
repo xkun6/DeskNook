@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using XkDesk.Desktop;
 using XkDesk.Model;
+using XkDesk.Services;
 
 namespace XkDesk.Views;
 
@@ -50,10 +51,65 @@ public partial class SettingsWindow : Window
     {
         InitializeComponent();
         _controller = controller;
+        LoadGeneral(controller.Settings);
+        ShowTab(general: true);
         Load(controller.Settings.OrganizeRules);
         RuleList.ItemsSource = _rules;
         if (_rules.Count > 0) RuleList.SelectedIndex = 0;
         UpdateButtons();
+    }
+
+    private bool _loading;
+
+    private void LoadGeneral(AppSettings s)
+    {
+        _loading = true;
+        DblChk.IsChecked = s.DoubleClickToggle;
+        AutoChk.IsChecked = AutoStart.Default.IsEnabled; // 以注册表为准
+        SizeSystem.IsChecked = s.IconSizeMode == "system";
+        SizeSmall.IsChecked = s.IconSizeMode == "small";
+        SizeMedium.IsChecked = s.IconSizeMode == "medium";
+        SizeLarge.IsChecked = s.IconSizeMode == "large";
+        OpacitySlider.Value = s.BoxOpacity;
+        OpacityText.Text = $"{(int)Math.Round(s.BoxOpacity * 100)}%";
+        _loading = false;
+    }
+
+    private string SelectedSizeMode() =>
+        SizeSmall.IsChecked == true ? "small" : SizeMedium.IsChecked == true ? "medium" : SizeLarge.IsChecked == true ? "large" : "system";
+
+    private void ShowTab(bool general)
+    {
+        GeneralPage.Visibility = general ? Visibility.Visible : Visibility.Collapsed;
+        RulesPage.Visibility = general ? Visibility.Collapsed : Visibility.Visible;
+        BtnReset.Visibility = general ? Visibility.Collapsed : Visibility.Visible;
+        var on = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x3D, 0x8B, 0xFD));
+        var off = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x34, 0x3A, 0x41));
+        TabGeneral.Background = general ? on : off;
+        TabRules.Background = general ? off : on;
+    }
+
+    private void OnTabGeneral(object sender, RoutedEventArgs e) => ShowTab(general: true);
+    private void OnTabRules(object sender, RoutedEventArgs e) => ShowTab(general: false);
+
+    private void OnAutoStartClick(object sender, RoutedEventArgs e)
+    {
+        AutoStart.Default.SetEnabled(AutoChk.IsChecked == true);
+        AutoChk.IsChecked = AutoStart.Default.IsEnabled; // 写入失败时回显真实状态
+    }
+
+    private void OnOpacityChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_loading || !IsLoaded) return;
+        OpacityText.Text = $"{(int)Math.Round(e.NewValue * 100)}%";
+        _controller.PreviewBoxOpacity(e.NewValue);
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        // 未保存的透明度预览还原为已保存的值
+        _controller.PreviewBoxOpacity(_controller.Settings.BoxOpacity);
+        base.OnClosed(e);
     }
 
     private void Load(IEnumerable<OrganizeRule> rules)
@@ -116,7 +172,13 @@ public partial class SettingsWindow : Window
     private void OnSave(object sender, RoutedEventArgs e)
     {
         var rules = _rules.Select(r => r.ToRule()).Where(r => r.Name.Length > 0).ToList();
-        _controller.ApplySettings(new AppSettings { OrganizeRules = rules });
+        _controller.ApplySettings(new AppSettings
+        {
+            OrganizeRules = rules,
+            DoubleClickToggle = DblChk.IsChecked == true,
+            IconSizeMode = SelectedSizeMode(),
+            BoxOpacity = OpacitySlider.Value,
+        });
         Close();
     }
 

@@ -65,7 +65,8 @@ internal sealed class DesktopSurface : Canvas
         _c.CutStateChanged += UpdateCut;
         _c.RenameRequested += OnRenameRequested;
         _c.BoxRenameRequested += OnBoxRenameRequested;
-        _c.IconsVisibleChanged += ApplyIconsVisible;
+        _c.IconsVisibleChanged += OnIconsVisibleChanged;
+        _c.AppearanceChanged += ApplyAppearance;
         Loaded += (_, _) => Rebuild();
         Unloaded += OnUnloaded;
     }
@@ -86,16 +87,59 @@ internal sealed class DesktopSurface : Canvas
         _c.CutStateChanged -= UpdateCut;
         _c.RenameRequested -= OnRenameRequested;
         _c.BoxRenameRequested -= OnBoxRenameRequested;
-        _c.IconsVisibleChanged -= ApplyIconsVisible;
+        _c.IconsVisibleChanged -= OnIconsVisibleChanged;
+        _c.AppearanceChanged -= ApplyAppearance;
     }
 
     /// <summary>“显示桌面图标”开关：只隐藏本程序画的图标和格子，画布本身仍可右键（弹桌面背景菜单）。</summary>
-    private void ApplyIconsVisible()
+    private static readonly Duration FadeDuration = new(TimeSpan.FromMilliseconds(200));
+    private int _fadeVersion;
+
+    private void OnIconsVisibleChanged() => ApplyIconsVisible(animate: IsLoaded);
+
+    private void ApplyAppearance()
     {
-        var v = _c.IconsVisible ? Visibility.Visible : Visibility.Hidden;
+        foreach (var box in _boxes.Values) box.ApplyOpacity(_c.BoxOpacity);
+    }
+
+    /// <summary>应用显示状态：animate 时 200ms 淡入/淡出（对整个画布做不透明度动画），结束后再切 Visibility。</summary>
+    private void ApplyIconsVisible(bool animate = false)
+    {
+        var show = _c.IconsVisible;
+        var v = show ? Visibility.Visible : Visibility.Hidden;
+        var version = ++_fadeVersion;
+        if (!show) _c.ClearSelection();
+        BeginAnimation(OpacityProperty, null);
+        if (!animate)
+        {
+            Opacity = 1;
+            SetChildrenVisibility(v);
+            return;
+        }
+        if (show)
+        {
+            Opacity = 0;
+            SetChildrenVisibility(v);
+            BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0, 1, FadeDuration));
+        }
+        else
+        {
+            var anim = new System.Windows.Media.Animation.DoubleAnimation(1, 0, FadeDuration);
+            anim.Completed += (_, _) =>
+            {
+                if (version != _fadeVersion) return; // 期间又切换了状态
+                BeginAnimation(OpacityProperty, null);
+                Opacity = 1;
+                SetChildrenVisibility(Visibility.Hidden);
+            };
+            BeginAnimation(OpacityProperty, anim);
+        }
+    }
+
+    private void SetChildrenVisibility(Visibility v)
+    {
         foreach (var ctl in _controls.Values) ctl.Visibility = v;
         foreach (var box in _boxes.Values) box.Visibility = v;
-        if (!_c.IconsVisible) _c.ClearSelection();
     }
 
     /// <summary>窗口激活状态变化：选中项在失焦时变灰。</summary>
@@ -171,7 +215,7 @@ internal sealed class DesktopSurface : Canvas
             SetLeft(ctl, pt.X);
             SetTop(ctl, pt.Y);
         }
-        if (!_c.IconsVisible) ApplyIconsVisible();
+        if (!_c.IconsVisible) ApplyIconsVisible(animate: false);
     }
 
     private void Detach(IconItemControl ctl)
@@ -396,6 +440,18 @@ internal sealed class DesktopSurface : Canvas
             else if (_c.Selected.Contains(key)) _pressWasSelectedNoMod = _c.Selected.Count > 1;
             else _c.SelectOnly(key);
             CaptureMouse();
+            e.Handled = true;
+            return;
+        }
+
+        // 自由区空白处双击：隐藏/显示全部图标与格子（格子内的空白不算）
+        if (e.ClickCount == 2 && BoxAtSource(e.OriginalSource as DependencyObject) == null && _c.Settings.DoubleClickToggle)
+        {
+            _pressKey = null;
+            _banding = false;
+            _band.Visibility = Visibility.Collapsed;
+            if (IsMouseCaptured) ReleaseMouseCapture();
+            _c.SetIconsVisible(!_c.IconsVisible);
             e.Handled = true;
             return;
         }

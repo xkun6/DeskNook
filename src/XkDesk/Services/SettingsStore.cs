@@ -27,6 +27,7 @@ public sealed class SettingsStore
                 .Where(r => r != null && !string.IsNullOrWhiteSpace(r.Name))
                 .Select(r => new OrganizeRule(r.Name.Trim(), (r.Extensions ?? new()).Where(e => e != null).ToArray()))
                 .ToList();
+            s.Normalize();
             return s;
         }
         catch (Exception ex)
