@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
@@ -28,6 +29,8 @@ internal sealed class DesktopItemSource : IDisposable
     private readonly string? _mappedPath;
     private readonly string _container;
     private readonly string _prefix;
+    /// <summary>非桌面目录项（虚拟项）“系统桌面是否显示”的结果缓存：key = 解析名。询问系统视图是跨进程 COM 调用，Explorer 桌面线程忙时会阻塞数秒。</summary>
+    private readonly Dictionary<string, bool> _shownCache = new(StringComparer.OrdinalIgnoreCase);
     private List<DesktopItem> _items = new();
 
     public IReadOnlyList<DesktopItem> Items => _items;
@@ -58,7 +61,7 @@ internal sealed class DesktopItemSource : IDisposable
         _debounce.Tick += (_, _) =>
         {
             _debounce.Stop();
-            try { Refresh(); }
+            try { Refresh(useShownCache: true); }
             catch (Exception ex) { Log.Error("桌面项刷新失败", ex); }
         };
 
@@ -67,16 +70,22 @@ internal sealed class DesktopItemSource : IDisposable
         Register();
     }
 
-    /// <summary>立即重新枚举并与旧集合 diff，有变化则触发 Changed。</summary>
-    public void Refresh()
+    /// <summary>
+    /// 立即重新枚举并与旧集合 diff，有变化则触发 Changed。
+    /// useShownCache=true（通知去抖路径）时复用虚拟项的“系统桌面是否显示”缓存，避免跨进程阻塞；否则清空缓存重新询问。
+    /// </summary>
+    public void Refresh(bool useShownCache = false)
     {
+        var sw = Stopwatch.StartNew();
+        if (!useShownCache) _shownCache.Clear();
         var hints = _renameHints.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
         _renameHints.Clear();
         var fresh = Load();
+        var loadMs = sw.ElapsedMilliseconds;
         var diff = ItemDiff.Compute(_items, fresh, hints);
         _items = fresh;
         if (diff.IsEmpty) return;
-        Log.Info($"{(_mappedPath == null ? "桌面项" : "映射目录")}变化：新增 {diff.Added.Count}，删除 {diff.Removed.Count}，更新 {diff.Updated.Count}，改名 {diff.Renamed.Count}（共 {fresh.Count} 项）");
+        Log.Info($"{(_mappedPath == null ? "桌面项" : "映射目录")}变化：新增 {diff.Added.Count}，删除 {diff.Removed.Count}，更新 {diff.Updated.Count}，改名 {diff.Renamed.Count}（共 {fresh.Count} 项，刷新耗时 {sw.ElapsedMilliseconds} ms，枚举 {loadMs} ms）");
         foreach (var u in diff.Updated) IconInvalidated?.Invoke(u.Key);
         Changed?.Invoke(diff);
     }
@@ -183,10 +192,10 @@ internal sealed class DesktopItemSource : IDisposable
     private static string? NameOf(IntPtr pidl) =>
         ShellApi.GetNameFromPidl(pidl, ShellApi.SIGDN_DESKTOPABSOLUTEPARSING) ?? ShellApi.GetNameFromPidl(pidl, ShellApi.SIGDN_FILESYSPATH);
 
-    private List<DesktopItem> Load() => _mappedPath == null ? Enumerate() : EnumerateFolder(_mappedPath, _container);
+    private List<DesktopItem> Load() => _mappedPath == null ? Enumerate(_shownCache) : EnumerateFolder(_mappedPath, _container);
 
-    /// <summary>枚举桌面根的所有项。</summary>
-    public static List<DesktopItem> Enumerate()
+    /// <summary>枚举桌面根的所有项。shownCache 记住虚拟项是否被系统桌面显示（命中则不再跨进程询问 Explorer）。</summary>
+    public static List<DesktopItem> Enumerate(Dictionary<string, bool>? shownCache = null)
     {
         var list = new List<DesktopItem>();
         var desktop = ShellApi.Desktop;
@@ -197,14 +206,19 @@ internal sealed class DesktopItemSource : IDisposable
         IFolderView2? sysView = null;
         var sysViewTried = false;
 
-        EnumerateInto(list, desktop, IntPtr.Zero, "", "", (path, child) =>
+        EnumerateInto(list, desktop, IntPtr.Zero, "", "", (path, rawKey, child) =>
         {
             var onDesktopDir = path != null &&
                 (string.Equals(Path.GetDirectoryName(path), userDesk, StringComparison.OrdinalIgnoreCase) ||
                  string.Equals(Path.GetDirectoryName(path), pubDesk, StringComparison.OrdinalIgnoreCase));
             if (onDesktopDir) return true;
+            if (shownCache != null && shownCache.TryGetValue(rawKey, out var cached)) return cached;
+            var sw = Stopwatch.StartNew();
             if (!sysViewTried) { sysView = SystemDesktopView.Acquire(); sysViewTried = true; }
-            return sysView == null || SystemDesktopView.IsShown(sysView, ShellApi.PidlToBytes(child));
+            var shown = sysView == null || SystemDesktopView.IsShown(sysView, ShellApi.PidlToBytes(child));
+            if (sw.ElapsedMilliseconds > 200) Log.Info($"询问系统桌面视图耗时 {sw.ElapsedMilliseconds} ms：{rawKey}");
+            if (sysView != null && shownCache != null) shownCache[rawKey] = shown;
+            return shown;
         });
         return list;
     }
@@ -230,7 +244,7 @@ internal sealed class DesktopItemSource : IDisposable
 
     /// <summary>folderAbs 为 Zero 表示 folder 是桌面根（子 PIDL 本身即绝对 PIDL）。accept 返回 false 的项被跳过。</summary>
     private static void EnumerateInto(List<DesktopItem> list, IShellFolder folder, IntPtr folderAbs, string container, string keyPrefix,
-        Func<string?, IntPtr, bool>? accept)
+        Func<string?, string, IntPtr, bool>? accept)
     {
         var flags = ShellApi.SHCONTF_FOLDERS | ShellApi.SHCONTF_NONFOLDERS;
         if (ReadAdvanced("Hidden") == 1) flags |= ShellApi.SHCONTF_INCLUDEHIDDEN;
@@ -274,7 +288,7 @@ internal sealed class DesktopItemSource : IDisposable
                         catch { /* 文件瞬间消失等，按空属性处理 */ }
                     }
 
-                    if (accept != null && !accept(path, child)) continue;
+                    if (accept != null && !accept(path, rawKey, child)) continue;
 
                     byte[] pidl;
                     if (folderAbs == IntPtr.Zero) pidl = ShellApi.PidlToBytes(child);

@@ -36,7 +36,9 @@
 
 - `SHCNE_UPDATEIMAGE` / `SHCNE_ASSOCCHANGED`：`IconInvalidated(null)`，整体失效图标缓存，不触发 diff。
 - 其余：读取两个 PIDL 的解析名；`RENAMEITEM/RENAMEFOLDER` 记录**改名提示** `_renameHints[旧key]=新key`；`UPDATEITEM/ATTRIBUTES` 让该 key 的图标失效；然后 `Schedule()` 重置 300ms 去抖计时器。
-- 去抖到期 → `Refresh()`：重新 `Load()` → `ItemDiff.Compute(旧集合, 新集合, 改名提示)` → 触发 `Changed(diff)` 与逐项 `IconInvalidated`。
+- 去抖到期 → `Refresh(useShownCache: true)`：重新 `Load()` → `ItemDiff.Compute(旧集合, 新集合, 改名提示)` → 触发 `Changed(diff)` 与逐项 `IconInvalidated`。
+
+**耗时与虚拟项缓存**：桌面 255 项空闲时 `Enumerate()` 约 15ms（首次约 180ms），整条刷新应在“去抖 300ms + 几十 ms”内完成。枚举时对**不在用户/公共桌面目录下的项（回收站、此电脑等虚拟项）**要问系统桌面视图是否显示（`DesktopItemSource.Enumerate` → `SystemDesktopView.Acquire/IsShown`），这是**跨进程 COM 调用**进 Explorer 桌面线程；而“新建 ▸ 文件/文件夹”由 Explorer DefView 执行（日志 `代理已执行 … DefView=True`），它忙于新项与进入自身重命名时，该调用会被阻塞数秒（实测新建后 2~3 秒才刷新，删除/DefView=False 的操作只有约 0.4 秒）。因此：结果按解析名缓存在 `DesktopItemSource._shownCache`，去抖路径命中缓存则不再询问 Explorer；显式 `Refresh()`（菜单“刷新”、`CommitRename`）清缓存重新询问。刷新完成日志带“刷新耗时 X ms，枚举 Y ms”，单次询问超过 200ms 另记一行“询问系统桌面视图耗时”，用于确认是否仍被阻塞。
 
 `ItemDiff.Compute` 的规则：key 比较忽略大小写；先按改名提示配对（旧 key 在旧集合且不在新集合、新 key 在新集合且不在旧集合才成立），配对的进 `Renamed`，**不**算新增/删除；其余新增、删除、指纹变化（`Updated`）。没有改名提示（例如外部程序批量改名）则按“删除 + 新增”处理，位置会丢（新增项走空位分配）。
 
