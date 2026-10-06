@@ -57,6 +57,7 @@
       "Collapsed": false,
       "Locked": false,
       "SortMode": "",
+      "ViewMode": "",
       "ItemKeys": [ "C:\\Users\\Alice\\Desktop\\a.docx", "C:\\Users\\Alice\\Desktop\\b.pdf" ],
       "Gone": { "C:\\Users\\Alice\\Desktop\\b.pdf": "2026-10-05T12:00:00Z" }
     },
@@ -70,6 +71,7 @@
       "Collapsed": true,
       "Locked": true,
       "SortMode": "date",
+      "ViewMode": "list",
       "ItemKeys": [],
       "Gone": {}
     }
@@ -83,7 +85,7 @@
 |---|---|
 | `Version` | 目前恒为 1，**还没有按版本迁移的代码**；改格式靠“只增字段 + 默认值” |
 | `FreeIcons` | key → `IconSlot`。key 是解析名（路径或 `::{CLSID}`），字典忽略大小写；`Col/Row` 是该显示器网格的列/行；`LastSeenUtc` 仅在项消失后记录首次消失时间，超过 7 天清理 |
-| `Boxes[]` | 见 [boxes.md](boxes.md) 的字段表；`Rect` 是展开状态下相对工作区的 DIP |
+| `Boxes[]` | 见 [boxes.md](boxes.md) 的字段表；`Rect` 是展开状态下相对工作区的 DIP；`ViewMode`（`""`/`large`/`medium`/`small`/`list`，缺失或未知值 = `""` 跟随桌面，`LayoutStore.Load` 规整）为格子的“查看”视图 |
 | `View.IconSize` | 图标大小（DIP，默认 48）；跟随系统时首次取系统值 |
 | `View.SortKey` | 最近一次“排序方式”（`name/size/type/date`，手动摆放后清空） |
 | `View.IconsHidden` | 双击隐藏状态（重启后保持） |

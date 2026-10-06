@@ -133,6 +133,13 @@ internal static class MenuExtensions
         Handler = c => c.Controller.SetBoxSort(c.Box!, key),
     };
 
+    private static CustomMenuItem BoxViewItem(string title, string key) => new()
+    {
+        Title = title, Radio = true,
+        Checked = c => c.Box!.ViewMode == key,
+        Handler = c => c.Controller.SetBoxView(c.Box!, key),
+    };
+
     private static bool InBoxMenu(MenuContext c) => c.Box != null;
 
     private static bool IsDesktopIconSelection(MenuContext c) =>
@@ -151,6 +158,14 @@ internal static class MenuExtensions
         {
             Title = "", DynamicTitle = c => c.Box!.Locked ? "解除锁定(&L)" : "锁定(&L)", Position = MenuPosition.Top, Applies = InBoxMenu,
             Handler = c => c.Controller.ToggleBoxLocked(c.Box!),
+        },
+        new()
+        {
+            Title = "查看(&V)", Position = MenuPosition.Top, Applies = InBoxMenu,
+            Children = new[]
+            {
+                BoxViewItem("跟随桌面", ""), BoxViewItem("大图标", "large"), BoxViewItem("中等图标", "medium"), BoxViewItem("小图标", "small"), BoxViewItem("列表", "list"),
+            },
         },
         new()
         {

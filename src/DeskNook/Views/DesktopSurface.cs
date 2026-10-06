@@ -194,8 +194,6 @@ internal sealed class DesktopSurface : Canvas
             _boxes.Remove(id);
         }
 
-        var px = (int)Math.Round(_c.IconSize * _monitor.Scale);
-
         // 格子：位置/大小/标题 + 内部图标
         foreach (var box in boxes)
         {
@@ -208,16 +206,18 @@ internal sealed class DesktopSurface : Canvas
             }
             bc.Bind(box, eff.Rect, Origin);
             var ctls = new List<IconItemControl>();
+            var view = _c.ViewOf(box);
             foreach (var item in boxItems[box.Id])
-                ctls.Add(BindItem(item, bc.Content, px, box));
+                ctls.Add(BindItem(item, bc.Content, view));
             bc.SetItems(ctls);
         }
 
         // 自由区图标
+        var freeView = new BoxView(_c.IconSize, _c.CellW, _c.CellH, false, false);
         foreach (var (key, item) in freeItems)
         {
             var slot = _c.SlotOf(key)!;
-            var ctl = BindItem(item, this, px, null);
+            var ctl = BindItem(item, this, freeView);
             var pt = CellToPoint(slot.Col, slot.Row);
             SetLeft(ctl, pt.X);
             SetTop(ctl, pt.Y);
@@ -231,7 +231,7 @@ internal sealed class DesktopSurface : Canvas
     }
 
     /// <summary>创建/复用图标控件并放进 parent（自由区为 Surface，格子内为其 Content）。</summary>
-    private IconItemControl BindItem(DesktopItem item, Canvas parent, int px, BoxState? box)
+    private IconItemControl BindItem(DesktopItem item, Canvas parent, BoxView view)
     {
         if (!_controls.TryGetValue(item.Key, out var ctl))
         {
@@ -243,8 +243,9 @@ internal sealed class DesktopSurface : Canvas
             Detach(ctl);
             parent.Children.Add(ctl);
         }
-        var changed = ctl.Item != item || ctl.Width != _c.CellW;
-        ctl.Bind(item, _c.IconSize, _c.CellW, _c.CellH);
+        var px = (int)Math.Round(view.IconSize * _monitor.Scale);
+        var changed = ctl.Item != item || ctl.IconPx != px || ctl.Horizontal != view.Horizontal || (!view.Horizontal && ctl.Width != view.CellW);
+        ctl.Bind(item, view.IconSize, view.CellW, view.CellH, view.Horizontal);
         ctl.WindowActive = _windowActive;
         ctl.IsSelected = _c.Selected.Contains(item.Key);
         ctl.IsCut = _c.IsCut(item);
@@ -255,6 +256,7 @@ internal sealed class DesktopSurface : Canvas
     private void LoadIcon(IconItemControl ctl, DesktopItem item, int px)
     {
         ctl.NeedsIcon = false;
+        ctl.IconPx = px;
         _c.Icons.Get(item, px, bmp =>
         {
             if (bmp == null) { ctl.NeedsIcon = true; return; }
@@ -267,7 +269,7 @@ internal sealed class DesktopSurface : Canvas
         var px = (int)Math.Round(_c.IconSize * _monitor.Scale);
         foreach (var (k, ctl) in _controls)
             if (key == null || string.Equals(k, key, StringComparison.OrdinalIgnoreCase))
-                LoadIcon(ctl, ctl.Item, px);
+                LoadIcon(ctl, ctl.Item, ctl.IconPx > 0 ? ctl.IconPx : px);
     }
 
     private void UpdateSelection()
@@ -672,17 +674,18 @@ internal sealed class DesktopSurface : Canvas
 
         var item = ctl.Item;
         var lb = ctl.LabelBounds;
-        var left = GetLeft(ctl) + 1;
+        var horizontal = ctl.Horizontal;
+        var left = horizontal ? GetLeft(ctl) + lb.X : GetLeft(ctl) + 1;
         var top = GetTop(ctl) + lb.Y - 1;
         var box = new TextBox
         {
             Text = item.EditName,
             FontFamily = ctl.FontFamily,
             FontSize = SystemFonts.MessageFontSize,
-            Width = _c.CellW - 2,
+            Width = horizontal ? Math.Max(20, ctl.Width - lb.X - 2) : _c.CellW - 2,
             MinHeight = lb.Height + 2,
-            TextWrapping = TextWrapping.Wrap,
-            TextAlignment = TextAlignment.Center,
+            TextWrapping = horizontal ? TextWrapping.NoWrap : TextWrapping.Wrap,
+            TextAlignment = horizontal ? TextAlignment.Left : TextAlignment.Center,
             AcceptsReturn = false,
             BorderBrush = new SolidColorBrush(Color.FromRgb(0x33, 0x99, 0xFF)),
             BorderThickness = new Thickness(1),

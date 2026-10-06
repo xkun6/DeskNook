@@ -248,24 +248,35 @@ internal sealed class BoxControl : Canvas
         LayoutItems();
     }
 
-    private int Cols => BoxGeometry.Cols(DisplayRect.W, _c.CellW);
-    private double OffsetX => (DisplayRect.W - Cols * _c.CellW) / 2;
+    /// <summary>本格子当前视图的排布参数（数学都在 BoxGeometry）。</summary>
+    private BoxView View => _c.ViewOf(Box);
 
     private double ViewportH => Math.Max(0, DisplayRect.H - BoxGeometry.ChromeH);
 
-    private double MaxScroll => Math.Max(0, BoxGeometry.ContentRows(_controls.Count, Cols) * _c.CellH - ViewportH);
+    private double MaxScroll
+    {
+        get
+        {
+            var v = View;
+            return Math.Max(0, BoxGeometry.ViewContentRows(v, _controls.Count, BoxGeometry.ViewCols(v, DisplayRect.W)) * v.CellH - ViewportH);
+        }
+    }
 
     private void LayoutItems()
     {
-        var cols = Cols;
+        var v = View;
+        var w = DisplayRect.W;
+        var cols = BoxGeometry.ViewCols(v, w);
         _scroll = Math.Clamp(_scroll, 0, MaxScroll);
-        var offX = OffsetX;
+        var offX = BoxGeometry.ViewOffsetX(v, w);
+        var itemW = BoxGeometry.ItemWidth(v, w);
         if (_mode == Mode.Move) { UpdateThumb(); return; }   // 移动时图标相对格子不变
         for (var i = 0; i < _controls.Count; i++)
         {
-            var (c, r) = BoxGeometry.CellOfIndex(i, cols);
-            SetLeft(_controls[i], offX + c * _c.CellW);
-            SetTop(_controls[i], r * _c.CellH - _scroll);
+            var (c, r) = BoxGeometry.ViewCellOf(v, i, _controls.Count, cols);
+            if (v.Horizontal) _controls[i].SetItemWidth(itemW);
+            SetLeft(_controls[i], offX + c * itemW);
+            SetTop(_controls[i], r * v.CellH - _scroll);
         }
         UpdateThumb();
     }
@@ -324,18 +335,36 @@ internal sealed class BoxControl : Canvas
     public int InsertIndexAt(Point surfacePoint)
     {
         var vp = ViewportRect;
-        var x = surfacePoint.X - vp.X - OffsetX;
+        var v = View;
+        var x = surfacePoint.X - vp.X - BoxGeometry.ViewOffsetX(v, DisplayRect.W);
         var y = surfacePoint.Y - vp.Y + _scroll;
-        return BoxGeometry.InsertIndexAt(x, y, Cols, _c.CellW, _c.CellH, _controls.Count);
+        return BoxGeometry.ViewInsertIndexAt(v, x, y, BoxGeometry.ViewCols(v, DisplayRect.W), BoxGeometry.ItemWidth(v, DisplayRect.W), _controls.Count);
     }
 
     public void ShowInsert(int index)
     {
-        var (c, r) = BoxGeometry.CellOfIndex(index, Cols);
-        var x = OffsetX + c * _c.CellW - 2;
-        var y = r * _c.CellH - _scroll + 6;
-        if (y + _c.CellH - 12 < 0 || y > ViewportH) { _insert.Visibility = Visibility.Collapsed; return; }
-        _insert.Height = _c.CellH - 12;
+        var v = View;
+        var cols = BoxGeometry.ViewCols(v, DisplayRect.W);
+        var itemW = BoxGeometry.ItemWidth(v, DisplayRect.W);
+        var (c, r) = BoxGeometry.ViewCellOf(v, index, _controls.Count, cols);
+        if (v.Horizontal)
+        {
+            // 横排：目标单元顶部的横条
+            var hy = r * v.CellH - _scroll;
+            if (hy + 3 < 0 || hy > ViewportH) { _insert.Visibility = Visibility.Collapsed; return; }
+            _insert.Width = Math.Max(1, itemW - 12);
+            _insert.Height = 3;
+            SetLeft(_insert, BoxGeometry.ViewOffsetX(v, DisplayRect.W) + c * itemW + 6);
+            SetTop(_insert, BoxGeometry.TitleH + hy);
+            Panel.SetZIndex(_insert, 30);
+            _insert.Visibility = Visibility.Visible;
+            return;
+        }
+        var x = BoxGeometry.ViewOffsetX(v, DisplayRect.W) + c * itemW - 2;
+        var y = r * v.CellH - _scroll + 6;
+        if (y + v.CellH - 12 < 0 || y > ViewportH) { _insert.Visibility = Visibility.Collapsed; return; }
+        _insert.Width = 3;
+        _insert.Height = v.CellH - 12;
         SetLeft(_insert, x);
         SetTop(_insert, BoxGeometry.TitleH + y);
         Panel.SetZIndex(_insert, 30);

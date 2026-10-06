@@ -19,6 +19,8 @@ public partial class IconItemControl : UserControl
 
     private bool _hover, _selected, _active = true, _cut;
     private double _lineHeight = 16;
+    private bool _horizontal;
+    private double _iconDip;
 
     public DesktopItem Item { get; private set; } = null!;
 
@@ -37,19 +39,66 @@ public partial class IconItemControl : UserControl
         return b;
     }
 
-    /// <summary>绑定项并按图标/格子尺寸（DIP）布局。</summary>
-    public void Bind(DesktopItem item, double iconDip, double cellW, double cellH)
+    /// <summary>当前是否横排（图标在左、文字在右、单行）。</summary>
+    public bool Horizontal => _horizontal;
+
+    /// <summary>当前加载图标用的像素尺寸（0 = 尚未加载）。</summary>
+    public int IconPx { get; set; }
+
+    /// <summary>绑定项并按图标/格子尺寸（DIP）布局。horizontal：图标在左文字在右的单行布局（小图标/列表视图）。</summary>
+    public void Bind(DesktopItem item, double iconDip, double cellW, double cellH, bool horizontal = false)
     {
         Item = item;
+        _horizontal = horizontal;
+        _iconDip = iconDip;
         Width = cellW;
         Height = cellH;
         Icon.Width = Icon.Height = iconDip;
-        Icon.Margin = new Thickness(2, 6, 2, 3);
-        Label.Margin = new Thickness(0, 0, 0, 2);
-        Label.MaxWidth = cellW - 6;
-        Label.Text = AllowCharWrap(item.DisplayName, Label.MaxWidth);
         _lineHeight = Math.Ceiling(Label.FontFamily.LineSpacing * Label.FontSize);
+        if (horizontal)
+        {
+            Stack.Orientation = Orientation.Horizontal;
+            Frame.HorizontalAlignment = HorizontalAlignment.Left;
+            Frame.VerticalAlignment = VerticalAlignment.Stretch;
+            Icon.HorizontalAlignment = HorizontalAlignment.Left;
+            Icon.VerticalAlignment = VerticalAlignment.Center;
+            Icon.Margin = new Thickness(4, 0, 6, 0);
+            Label.Margin = new Thickness(0);
+            Label.TextWrapping = TextWrapping.NoWrap;
+            Label.TextAlignment = TextAlignment.Left;
+            Label.HorizontalAlignment = HorizontalAlignment.Left;
+            Label.VerticalAlignment = VerticalAlignment.Center;
+            Label.MaxWidth = HorizontalLabelWidth(cellW);
+            Label.Text = item.DisplayName;
+        }
+        else
+        {
+            Stack.Orientation = Orientation.Vertical;
+            Frame.HorizontalAlignment = HorizontalAlignment.Center;
+            Frame.VerticalAlignment = VerticalAlignment.Top;
+            Icon.HorizontalAlignment = HorizontalAlignment.Center;
+            Icon.VerticalAlignment = VerticalAlignment.Stretch;
+            Icon.Margin = new Thickness(2, 6, 2, 3);
+            Label.Margin = new Thickness(0, 0, 0, 2);
+            Label.TextWrapping = TextWrapping.Wrap;
+            Label.TextAlignment = TextAlignment.Center;
+            Label.HorizontalAlignment = HorizontalAlignment.Center;
+            Label.VerticalAlignment = VerticalAlignment.Stretch;
+            Label.MaxWidth = cellW - 6;
+            Label.Text = AllowCharWrap(item.DisplayName, Label.MaxWidth);
+        }
         UpdateVisual();
+    }
+
+    /// <summary>横排时文字可用宽度：单元宽 − 图标 − 图标边距(4+6) − 边框(2) − 右侧留白(4)。</summary>
+    private double HorizontalLabelWidth(double itemW) => Math.Max(10, itemW - _iconDip - 16);
+
+    /// <summary>横排时按拉伸后的单元宽度设置控件宽度与文字最大宽度（竖排不用）。</summary>
+    public void SetItemWidth(double w)
+    {
+        if (!_horizontal || Math.Abs(Width - w) < 0.01) return;
+        Width = w;
+        Label.MaxWidth = HorizontalLabelWidth(w);
     }
 
     /// <summary>尚未取到图标（需要加载/重试）。</summary>
@@ -95,14 +144,15 @@ public partial class IconItemControl : UserControl
         get
         {
             var p = Label.TranslatePoint(new Point(0, 0), this);
-            return new Rect(p, new Size(Math.Max(Label.ActualWidth, Width - 6), Math.Max(Label.ActualHeight, _lineHeight)));
+            var w = _horizontal ? Label.ActualWidth : Math.Max(Label.ActualWidth, Width - 6);
+            return new Rect(p, new Size(w, Math.Max(Label.ActualHeight, _lineHeight)));
         }
     }
 
     private void UpdateVisual()
     {
         var expanded = _selected || _hover;
-        Label.MaxHeight = expanded ? double.PositiveInfinity : _lineHeight * 2;
+        Label.MaxHeight = _horizontal ? _lineHeight : expanded ? double.PositiveInfinity : _lineHeight * 2;
         Panel.SetZIndex(this, expanded ? 10 : 0);
 
         if (_selected)

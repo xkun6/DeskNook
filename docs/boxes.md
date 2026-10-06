@@ -19,6 +19,7 @@
 | `Collapsed` | bool | 折叠：显示时只有标题栏高度 |
 | `Locked` | bool | 锁定：不能移动/缩放 |
 | `SortMode` | string | `""`=手动顺序（仅普通格子）｜`name`｜`date`｜`size`｜`type` |
+| `ViewMode` | string | `""`=跟随桌面图标大小｜`large`(96)｜`medium`(48)｜`small`（小图标，横排）｜`list`（列表，按列竖排）；未知值加载时规整为 `""`（`BoxGeometry:NormalizeViewMode`） |
 | `ItemKeys` | string[] | 普通格子的成员 key（有序）；映射格子不使用（对账时清空） |
 | `Gone` | `{key: 消失时间}` | `ItemKeys` 里已从桌面消失的 key 的首次消失时间（7 天保留） |
 
@@ -37,8 +38,25 @@
 
 - **有效矩形** `Effective(box, monitors, ignoreCollapsed)`：找不到 `box.Monitor` 就用 `monitors[0]`（主屏）；宽高夹到工作区内、位置夹到工作区内；折叠且 `!ignoreCollapsed` 时高度 = `TitleH`。只读，不改状态。
 - **占用格** `CoveredCells`：所有格子（含折叠后的有效高度）覆盖的网格单元集合（含部分覆盖，用 `Span` + `Eps`）；自由图标不能占这些格。
-- **内容排布**：列数 `Cols = max(1, floor(宽/CellW))`；成员按行优先（`index % cols`, `index / cols`）；内容在格子里水平居中（`OffsetX = (宽 - Cols*CellW)/2`），所以非整格宽度也均匀。
-- **插入位置** `InsertIndexAt(x, y, cols, cellW, cellH, count)`：落点所在列，格内偏右一半则插到该图标之后；`y` 已含滚动偏移。
+- **内容排布**：一律经 `BoxView` 系列函数（见下“查看（视图）”）：`ViewCols`（列数 = `max(1, floor(宽/CellW))`）、`ViewCellOf`（行优先 `index % cols, index / cols`；列表按列优先）、`ViewOffsetX`（竖排水平居中 `(宽 - Cols*CellW)/2`，横排为 0）、`ItemWidth`、`ViewContentRows`。跟随桌面（`ViewMode=""`）时与原有 `Cols`/`CellOfIndex` 完全一致。
+- **插入位置** `ViewInsertIndexAt(view, x, y, cols, itemW, count)`：竖排复用 `InsertIndexAt(x, y, cols, cellW, cellH, count)`（落点所在列，格内偏右一半则插到该图标之后）；横排按 y 方向半格判前后；列表把（列，行）换算成 `col*rows+row`；结果夹到 `0..count`；`y` 已含滚动偏移。
+
+### 查看（视图）
+
+每个格子可单独选视图（菜单“查看”，`MenuExtensions:BoxViewItem` → `DesktopController.SetBoxView` 写 `BoxState.ViewMode`、保存、`ItemsChanged`；普通格子与映射格子都走 `MenuExtensions.Items`，`Applies = InBoxMenu`）。排布参数由 `BoxGeometry.ViewFor(mode, 桌面iconSize, 桌面cellW, 桌面cellH)` 给出 `BoxView(IconSize, CellW, CellH, Horizontal, ColumnMajor)`，控制器入口 `DesktopController.ViewOf(box)`：
+
+| 模式 | 图标 DIP | 单元 | 方向 |
+|---|---|---|---|
+| `""` 跟随桌面 | 桌面 `IconSize` | 桌面 `CellW × CellH` | 竖排、行优先 |
+| `large` / `medium` | 96 / 48 | 图标 + 桌面额外间距（`cellW - iconSize`、`cellH - iconSize`） | 竖排、行优先 |
+| `small` | 16 | `SmallItemW=200 × SmallItemH=24` | 横排（图标在左文字在右、单行）、行优先 |
+| `list` | 16 | 同 small | 横排、**列优先**（`rows = ceil(count/cols)`，先竖着排满一列再下一列） |
+
+- **横排拉伸**：`cols = max(1, floor(宽/200))`，实际单元宽 `ItemWidth = 宽/cols`，格子缩放拖动时实时变化；`BoxControl.LayoutItems` 对每个图标调 `IconItemControl.SetItemWidth`。竖排仍用固定 `CellW` 并居中。
+- **插入指示**（`BoxControl.ShowInsert`）：竖排是目标单元左侧竖条；横排是目标单元顶部的横条（`Height=3`、`Width=itemW-12`），位置按 `ViewCellOf`（`index == count` 时落在末尾之后；列表列已满则在最后一列下方）。
+- **方向键/Shift 区域选择**：`DesktopController.BuildLocs` 用 `ViewOf` + `ViewCols` + `ViewCellOf` 得到每项的（列，行），所以按视觉位置移动（列表里左右键跨列）。
+- **图标像素**：`DesktopSurface.BindItem` 按视图的 `IconSize × Scale` 加载，`IconItemControl.IconPx` 记录当前像素；视图/尺寸变化时重新 `LoadIcon`，`OnIconInvalidated` 按各控件自己的 `IconPx` 重载。
+- 缩放最小尺寸（`SnapResize`）仍用桌面的 `CellW/CellH`，不随视图变化。
 
 ## 交互（`BoxControl`）
 
@@ -112,5 +130,5 @@
 ## 修改建议
 
 - 想加格子的新属性：加到 `BoxState`（给默认值，旧 `layout.json` 缺字段时自动取默认；见 `BoxPersistenceTests.读取阶段1占位格子_缺新字段时补默认值`），在 `LayoutStore.Load` 补 null 修正，渲染在 `BoxControl.Relayout`，菜单项加到 `MenuExtensions.Items`（`Applies = InBoxMenu`）。
-- 改交互手感（吸附阈值、最小尺寸）只改 `BoxGeometry` 常量/函数并补单测；`BoxControl` 不含数学。
+- 改交互手感（吸附阈值、最小尺寸）只改 `BoxGeometry` 常量/函数并补单测；`BoxControl` 不含数学。视图（查看）的几何同样都在 `BoxGeometry`（`ViewFor`、`View*` 系列），`BoxControl` 只调用。
 - 任何会触发 `ItemsChanged` 的路径都会让所有显示器的 `DesktopSurface.Rebuild()`，拖动过程中不要走它。

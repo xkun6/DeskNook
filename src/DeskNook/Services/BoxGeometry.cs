@@ -13,6 +13,9 @@ public sealed record SnapResult(BoxRect Rect, IReadOnlyList<Guide> Guides);
 /// <summary>格子跨显示器拖动时在目标显示器上的预览：Rect 相对目标工作区（DIP），Guides 为目标屏上的辅助线。</summary>
 public sealed record BoxGhost(string Monitor, BoxRect Rect, string Title, IReadOnlyList<Guide> Guides);
 
+/// <summary>格子内容的排布参数：图标边长、单元宽高（DIP）、是否图标在左文字在右、是否按列优先排（列表）。</summary>
+public sealed record BoxView(double IconSize, double CellW, double CellH, bool Horizontal, bool ColumnMajor);
+
 /// <summary>格子几何（纯逻辑）：有效矩形、占用格、内容排布、移动/缩放吸附、新建选位。</summary>
 public static class BoxGeometry
 {
@@ -25,6 +28,9 @@ public static class BoxGeometry
     public const int DefaultRows = 2;
     public const double SnapThreshold = 8;
     private const double Eps = 1e-6;
+    public const double SmallIconSize = 16;
+    public const double SmallItemW = 200;
+    public const double SmallItemH = 24;
 
     public static double WidthFor(int cols, double cellW) => cols * cellW;
     public static double HeightFor(int rows, double cellH) => ChromeH + rows * cellH;
@@ -47,6 +53,62 @@ public static class BoxGeometry
         var frac = x / cellW - Math.Floor(x / cellW);
         var row = Math.Max(0, (int)Math.Floor(y / cellH));
         var idx = row * cols + c + (frac >= 0.5 && x >= 0 ? 1 : 0);
+        return Math.Clamp(idx, 0, count);
+    }
+
+    // ------------------------------------------------------------ 视图（查看）
+
+    /// <summary>规整视图模式：未知值（含 null）视为 ""（跟随桌面）。</summary>
+    public static string NormalizeViewMode(string? mode) => mode is "large" or "medium" or "small" or "list" ? mode : "";
+
+    /// <summary>视图参数；iconSize/cellW/cellH 是桌面当前的图标与单元尺寸（DIP）。</summary>
+    public static BoxView ViewFor(string? mode, double iconSize, double cellW, double cellH)
+    {
+        switch (NormalizeViewMode(mode))
+        {
+            case "large": return Sized(96);
+            case "medium": return Sized(48);
+            case "small": return new BoxView(SmallIconSize, SmallItemW, SmallItemH, true, false);
+            case "list": return new BoxView(SmallIconSize, SmallItemW, SmallItemH, true, true);
+            default: return new BoxView(iconSize, cellW, cellH, false, false);
+        }
+        BoxView Sized(double s) => new(s, s + (cellW - iconSize), s + (cellH - iconSize), false, false);
+    }
+
+    public static int ViewCols(BoxView v, double boxW) => Cols(boxW, v.CellW);
+
+    /// <summary>单元实际宽度：横排随格子宽度拉伸，竖排固定为 CellW。</summary>
+    public static double ItemWidth(BoxView v, double boxW) => v.Horizontal ? boxW / ViewCols(v, boxW) : v.CellW;
+
+    /// <summary>内容水平偏移：竖排居中，横排为 0。</summary>
+    public static double ViewOffsetX(BoxView v, double boxW) => v.Horizontal ? 0 : (boxW - ViewCols(v, boxW) * v.CellW) / 2;
+
+    /// <summary>第 index 项所在的（列，行）；index == count（插到末尾）时返回其后的位置，列优先且列已满则落在最后一列下方一行。</summary>
+    public static (int Col, int Row) ViewCellOf(BoxView v, int index, int count, int cols)
+    {
+        if (!v.ColumnMajor) return CellOfIndex(index, cols);
+        var rows = Math.Max(1, (count + cols - 1) / cols);
+        var c = index / rows;
+        return c >= cols ? (cols - 1, rows) : (c, index % rows);
+    }
+
+    public static int ViewContentRows(BoxView v, int count, int cols) =>
+        v.ColumnMajor ? (count <= 0 ? 0 : (count + cols - 1) / cols) : ContentRows(count, cols);
+
+    /// <summary>内容坐标（已含滚动偏移）→ 插入位置（0..count）。竖排按 x 半格、横排按 y 半格判前后；列优先换算成 col*rows+row。</summary>
+    public static int ViewInsertIndexAt(BoxView v, double x, double y, int cols, double itemW, int count)
+    {
+        if (!v.Horizontal) return InsertIndexAt(x, y, cols, itemW, v.CellH, count);
+        var c = Math.Clamp((int)Math.Floor(x / itemW), 0, cols - 1);
+        var row = Math.Max(0, (int)Math.Floor(y / v.CellH));
+        var after = y >= 0 && y / v.CellH - Math.Floor(y / v.CellH) >= 0.5 ? 1 : 0;
+        int idx;
+        if (v.ColumnMajor)
+        {
+            var rows = Math.Max(1, (count + cols - 1) / cols);
+            idx = c * rows + Math.Min(row, rows - 1) + after;
+        }
+        else idx = row * cols + c + after;
         return Math.Clamp(idx, 0, count);
     }
 

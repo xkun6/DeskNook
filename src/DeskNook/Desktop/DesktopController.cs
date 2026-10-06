@@ -355,10 +355,13 @@ internal sealed class DesktopController : IDisposable
     public string? MonitorAt(Win32.POINT p) =>
         _monitors.FirstOrDefault(m => p.X >= m.Bounds.Left && p.X < m.Bounds.Right && p.Y >= m.Bounds.Top && p.Y < m.Bounds.Bottom).DeviceName;
 
+    /// <summary>格子当前视图的排布参数（跟随桌面时与桌面图标尺寸一致）。</summary>
+    public BoxView ViewOf(BoxState box) => BoxGeometry.ViewFor(box.ViewMode, IconSize, CellW, CellH);
+
     public int BoxCols(BoxState box)
     {
         var eff = EffectiveRect(box, ignoreCollapsed: true);
-        return eff == null ? 1 : BoxGeometry.Cols(eff.Value.Rect.W, CellW);
+        return eff == null ? 1 : BoxGeometry.ViewCols(ViewOf(box), eff.Value.Rect.W);
     }
 
     /// <summary>格子内按显示顺序排列的项（普通格子：成员顺序或排序模式；映射格子：目录内容，默认按名称）。</summary>
@@ -488,7 +491,12 @@ internal sealed class DesktopController : IDisposable
         {
             var items = BoxItems(box);
             var cols = BoxCols(box);
-            for (var i = 0; i < items.Count; i++) d[items[i].Key] = new ItemLoc("box:" + box.Id, i % cols, i / cols);
+            var view = ViewOf(box);
+            for (var i = 0; i < items.Count; i++)
+            {
+                var (c, r) = BoxGeometry.ViewCellOf(view, i, items.Count, cols);
+                d[items[i].Key] = new ItemLoc("box:" + box.Id, c, r);
+            }
         }
         return d;
     }
@@ -979,6 +987,16 @@ internal sealed class DesktopController : IDisposable
         if (box.SortMode == mode) return;
         if (mode == "") MaterializeOrder(box);
         box.SortMode = mode;
+        ScheduleSave();
+        ItemsChanged?.Invoke();
+    }
+
+    /// <summary>设置格子视图（"" = 跟随桌面 | large | medium | small | list）。</summary>
+    public void SetBoxView(BoxState box, string mode)
+    {
+        mode = BoxGeometry.NormalizeViewMode(mode);
+        if (box.ViewMode == mode) return;
+        box.ViewMode = mode;
         ScheduleSave();
         ItemsChanged?.Invoke();
     }

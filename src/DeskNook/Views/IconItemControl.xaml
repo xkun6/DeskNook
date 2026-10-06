@@ -4,7 +4,7 @@
              SnapsToDevicePixels="True" UseLayoutRounding="True" Focusable="False">
     <Border x:Name="Frame" HorizontalAlignment="Center" VerticalAlignment="Top"
             BorderThickness="1" CornerRadius="2" Background="Transparent">
-        <StackPanel>
+        <StackPanel x:Name="Stack">
             <Image x:Name="Icon" HorizontalAlignment="Center" Stretch="Fill"
                    RenderOptions.BitmapScalingMode="HighQuality"/>
             <TextBlock x:Name="Label" TextAlignment="Center" TextWrapping="Wrap"

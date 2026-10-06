@@ -36,6 +36,7 @@ public sealed class LayoutStore
                     b.ItemKeys ??= new();
                     b.Name ??= "";
                     b.SortMode ??= "";
+                    b.ViewMode = BoxGeometry.NormalizeViewMode(b.ViewMode);
                     b.Monitor ??= "";
                     b.Gone = b.Gone == null ? new(StringComparer.OrdinalIgnoreCase) : new Dictionary<string, DateTime>(b.Gone, StringComparer.OrdinalIgnoreCase);
                     if (string.IsNullOrEmpty(b.Id)) b.Id = BoxOps.NewId();

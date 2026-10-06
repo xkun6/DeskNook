@@ -35,6 +35,8 @@ public sealed class BoxState
     public bool Locked { get; set; }
     /// <summary>"" = 手动顺序 | name | date | size | type</summary>
     public string SortMode { get; set; } = "";
+    /// <summary>"" = 跟随桌面图标大小 | large(96) | medium(48) | small（小图标，横排）| list（列表，按列竖排）</summary>
+    public string ViewMode { get; set; } = "";
     public List<string> ItemKeys { get; set; } = new();
     /// <summary>ItemKeys 中已从桌面消失的 key → 消失时间（7 天保留规则）。</summary>
     public Dictionary<string, DateTime> Gone { get; set; } = new(StringComparer.OrdinalIgnoreCase);

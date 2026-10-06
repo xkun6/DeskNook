@@ -249,6 +249,107 @@ public class BoxLayoutTests
         Assert.Equal(6, BoxGeometry.InsertIndexAt(290, 150, 4, 75, 100, 6)); // 夹到 count
     }
 
+    // ---------------------------------------------------------------- 视图（查看）
+
+    [Fact]
+    public void 视图参数_跟随桌面与传入完全相同()
+    {
+        foreach (var mode in new string?[] { "", null, "bogus", "Large" })
+            Assert.Equal(new BoxView(48, 75, 100, false, false), BoxGeometry.ViewFor(mode, 48, 75, 100));
+    }
+
+    [Fact]
+    public void 视图参数_大中图标_单元等于图标加桌面额外间距()
+    {
+        Assert.Equal(new BoxView(96, 123, 148, false, false), BoxGeometry.ViewFor("large", 48, 75, 100));
+        Assert.Equal(new BoxView(48, 76, 86, false, false), BoxGeometry.ViewFor("medium", 32, 60, 70));
+    }
+
+    [Fact]
+    public void 视图参数_小图标与列表_尺寸与方向标志()
+    {
+        Assert.Equal(new BoxView(16, 200, 24, true, false), BoxGeometry.ViewFor("small", 48, 75, 100));
+        Assert.Equal(new BoxView(16, 200, 24, true, true), BoxGeometry.ViewFor("list", 48, 75, 100));
+        Assert.Equal("list", BoxGeometry.NormalizeViewMode("list"));
+        Assert.Equal("", BoxGeometry.NormalizeViewMode("detail"));
+    }
+
+    [Fact]
+    public void 视图单元位置_行优先与列优先()
+    {
+        var small = BoxGeometry.ViewFor("small", 48, 75, 100);
+        var list = BoxGeometry.ViewFor("list", 48, 75, 100);
+        Assert.Equal((1, 1), BoxGeometry.ViewCellOf(small, 4, 7, 3));
+        Assert.Equal((1, 2), BoxGeometry.ViewCellOf(BoxGeometry.ViewFor("", 48, 75, 100), 7, 9, 3));
+        // 列表：count=7、cols=3 → rows=3，按列排
+        Assert.Equal((0, 0), BoxGeometry.ViewCellOf(list, 0, 7, 3));
+        Assert.Equal((0, 2), BoxGeometry.ViewCellOf(list, 2, 7, 3));
+        Assert.Equal((1, 1), BoxGeometry.ViewCellOf(list, 4, 7, 3));
+        Assert.Equal((2, 0), BoxGeometry.ViewCellOf(list, 6, 7, 3));
+        Assert.Equal((2, 1), BoxGeometry.ViewCellOf(list, 7, 7, 3));    // index == count：末尾之后
+        Assert.Equal((2, 2), BoxGeometry.ViewCellOf(list, 6, 6, 3));    // 列已满：最后一列下方
+        Assert.Equal((2, 1), BoxGeometry.ViewCellOf(small, 5, 5, 3));   // 行优先 index == count
+    }
+
+    [Fact]
+    public void 视图内容行数()
+    {
+        var small = BoxGeometry.ViewFor("small", 48, 75, 100);
+        var list = BoxGeometry.ViewFor("list", 48, 75, 100);
+        Assert.Equal(4, BoxGeometry.ViewContentRows(small, 10, 3));
+        Assert.Equal(3, BoxGeometry.ViewContentRows(list, 7, 3));
+        Assert.Equal(0, BoxGeometry.ViewContentRows(list, 0, 3));
+    }
+
+    [Fact]
+    public void 视图列数与单元宽度_横排拉伸_竖排居中()
+    {
+        var small = BoxGeometry.ViewFor("small", 48, 75, 100);
+        Assert.Equal(2, BoxGeometry.ViewCols(small, 450));
+        Assert.Equal(225, BoxGeometry.ItemWidth(small, 450));
+        Assert.Equal(1, BoxGeometry.ViewCols(small, 150));
+        Assert.Equal(150, BoxGeometry.ItemWidth(small, 150));
+        Assert.Equal(0, BoxGeometry.ViewOffsetX(small, 450));
+
+        var large = BoxGeometry.ViewFor("large", 48, 75, 100);
+        Assert.Equal(3, BoxGeometry.ViewCols(large, 450));
+        Assert.Equal(123, BoxGeometry.ItemWidth(large, 450));
+        Assert.Equal(40.5, BoxGeometry.ViewOffsetX(large, 450));
+    }
+
+    [Fact]
+    public void 视图插入位置_竖排与旧函数一致()
+    {
+        var v = BoxGeometry.ViewFor("", 48, 75, 100);
+        foreach (var (x, y) in new[] { (10.0, 10.0), (50.0, 10.0), (10.0, 150.0), (290.0, 150.0), (-5.0, 10.0), (310.0, 150.0) })
+            Assert.Equal(BoxGeometry.InsertIndexAt(x, y, 4, 75, 100, 6), BoxGeometry.ViewInsertIndexAt(v, x, y, 4, 75, 6));
+    }
+
+    [Fact]
+    public void 视图插入位置_横排按y半格判前后()
+    {
+        var small = BoxGeometry.ViewFor("small", 48, 75, 100);   // 单元高 24，cols=2，itemW=225
+        Assert.Equal(0, BoxGeometry.ViewInsertIndexAt(small, 10, 5, 2, 225, 5));    // 第 0 格上半
+        Assert.Equal(1, BoxGeometry.ViewInsertIndexAt(small, 10, 15, 2, 225, 5));   // 第 0 格下半 → 之后
+        Assert.Equal(1, BoxGeometry.ViewInsertIndexAt(small, 240, 5, 2, 225, 5));   // 第 1 列上半
+        Assert.Equal(2, BoxGeometry.ViewInsertIndexAt(small, 240, 15, 2, 225, 5));
+        Assert.Equal(2, BoxGeometry.ViewInsertIndexAt(small, 10, 30, 2, 225, 5));   // 第 1 行上半
+        Assert.Equal(5, BoxGeometry.ViewInsertIndexAt(small, 10, 500, 2, 225, 5));  // 夹到 count
+        Assert.Equal(0, BoxGeometry.ViewInsertIndexAt(small, -10, -5, 2, 225, 5));  // 夹到 0
+    }
+
+    [Fact]
+    public void 视图插入位置_列表换算成列乘行数加行()
+    {
+        var list = BoxGeometry.ViewFor("list", 48, 75, 100);     // count=7、cols=3 → rows=3
+        Assert.Equal(3, BoxGeometry.ViewInsertIndexAt(list, 210, 5, 3, 200, 7));    // 第 1 列第 0 行上半
+        Assert.Equal(4, BoxGeometry.ViewInsertIndexAt(list, 210, 30, 3, 200, 7));   // 第 1 列第 1 行上半
+        Assert.Equal(5, BoxGeometry.ViewInsertIndexAt(list, 210, 40, 3, 200, 7));   // 第 1 列第 1 行下半
+        Assert.Equal(6, BoxGeometry.ViewInsertIndexAt(list, 610, 5, 3, 200, 7));    // 列夹到最后一列
+        Assert.Equal(7, BoxGeometry.ViewInsertIndexAt(list, 410, 500, 3, 200, 7));  // 夹到 count
+        Assert.Equal(3, BoxGeometry.ViewInsertIndexAt(list, 10, 500, 3, 200, 7));   // 行夹到最后一行，下半 → 之后
+    }
+
     // ---------------------------------------------------------------- 吸附 / 对齐
 
     [Fact]
@@ -423,7 +524,21 @@ public class BoxPersistenceTests : IDisposable
         Assert.NotNull(b.Rect);
         Assert.False(b.Locked);
         Assert.Equal("", b.SortMode);
+        Assert.Equal("", b.ViewMode);
         Assert.Equal(new[] { "a" }, b.ItemKeys);
+    }
+
+    [Fact]
+    public void 视图模式往返_未知值规整为空()
+    {
+        var store = new LayoutStore(Path.Combine(_dir, "layout.json"));
+        var s = new LayoutState();
+        s.Boxes.Add(new BoxState { Id = "b1", Name = "a", ViewMode = "list" });
+        s.Boxes.Add(new BoxState { Id = "b2", Name = "b", ViewMode = "detail" });
+        Assert.True(store.Save(s));
+        var l = store.Load();
+        Assert.Equal("list", l.Boxes[0].ViewMode);
+        Assert.Equal("", l.Boxes[1].ViewMode);
     }
 
     [Fact]

@@ -94,7 +94,7 @@
 全部状态在 `DesktopController`（`Selected` 集合、`AnchorKey`），`DesktopSurface` 只转发输入：
 
 - 单击选中；Ctrl+点击切换；Shift+点击 `SelectRange`（锚点与目标之间的矩形区域，限同一区域：同一显示器自由区或同一格子）。右键点未选中项：先只选中它。
-- 方向键 `Navigate`：同一区域内按“主方向距离×1000 + 次方向距离”选最近项；Shift 扩展选择。
+- 方向键 `Navigate`：同一区域内按“主方向距离×1000 + 次方向距离”选最近项；Shift 扩展选择。格子内的行列由 `DesktopController.BuildLocs` 按格子视图（`BoxState.ViewMode`，见 [boxes.md](boxes.md)）算出，列表视图按列优先。
 - 框选：空白处按下开始（Ctrl 保留原选择）；在格子内空白处开始的框选只选该格子的图标，且要与格子可视区域相交（`_bandBox`）。
 - 拖动发起：按下后移动超过 `SystemParameters.MinimumHorizontal/VerticalDragDistance` → `DesktopController.StartDrag`（`SHDoDragDrop` 阻塞到拖放结束）。只拖与锚点同来源（同 `Container`）的项，因为 Shell 数据对象要求同一父文件夹。
 - 双击图标：`OpenItems` → `ShellContextMenu.InvokeDefault`（`CMF_DEFAULTONLY` + `GetMenuDefaultItem`，与 Explorer 双击行为一致）。
@@ -102,7 +102,7 @@
 
 ### 原位重命名
 
-触发：F2、菜单“重命名”（动词 `rename` 被拦截后回到 DeskNook）、“新建”命令后自动。流程：`DesktopController.BeginRename(key)` → `RenameRequested` → `DesktopSurface.OnRenameRequested` 在图标的文字位置放一个 `TextBox`（回车提交、Esc 取消、失焦提交；非文件夹且有扩展名时默认选中不含扩展名的部分）→ `CommitRename` → `ShellActions.Rename`：在项所在文件夹上调用 `IShellFolder.SetNameOf`（与 Explorer 一致地处理隐藏扩展名、非法字符提示）→ 拿到新 PIDL/新 key → 登记改名提示并刷新。映射目录里的项新的绝对 PIDL = 父绝对 PIDL + 新子 PIDL。
+触发：F2、菜单“重命名”（动词 `rename` 被拦截后回到 DeskNook）、“新建”命令后自动。流程：`DesktopController.BeginRename(key)` → `RenameRequested` → `DesktopSurface.OnRenameRequested` 在图标的文字位置放一个 `TextBox`（横排视图（小图标/列表，`IconItemControl.Horizontal`）下框在文字区：`left = GetLeft(ctl) + LabelBounds.X`、宽 = 控件宽 − `LabelBounds.X` − 2、左对齐不换行；回车提交、Esc 取消、失焦提交；非文件夹且有扩展名时默认选中不含扩展名的部分）→ `CommitRename` → `ShellActions.Rename`：在项所在文件夹上调用 `IShellFolder.SetNameOf`（与 Explorer 一致地处理隐藏扩展名、非法字符提示）→ 拿到新 PIDL/新 key → 登记改名提示并刷新。映射目录里的项新的绝对 PIDL = 父绝对 PIDL + 新子 PIDL。
 
 为什么拦截 `rename`：DeskNook 没有真实 DefView 宿主，系统的 `rename` 动词不会在 DeskNook 的画布上进入编辑；所以走 `MenuExtensions.VerbInterceptors["rename"]`。
 
