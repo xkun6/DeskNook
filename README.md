@@ -1,4 +1,4 @@
-# xk-desk
+# DeskNext（桌面整理）
 
 类腾讯桌面整理的 Windows 桌面工具（WPF / .NET 9 / x64）。程序接管桌面图标的绘制：文件仍留在桌面目录，不移动、不改属性；退出或崩溃后系统图标自动恢复。
 
@@ -8,23 +8,23 @@
 - **一键整理**：按分类规则（文件夹 / 快捷方式与程序 / 文档 / 图片 / 视频 / 音频 / 压缩包 / 其他，可在设置里编辑）自动建格子并归类，可撤销。
 - **双击隐藏**：双击桌面空白处，所有图标与格子淡出；再双击淡入恢复。状态会保存，重启后保持。可在设置里关闭。
 - **托盘常驻**：左键单击切换隐藏 / 显示；右键菜单：一键整理、撤销整理、新建格子、隐藏 / 显示桌面图标、设置、开机自启、退出。Explorer 重启后托盘图标自动重建。
-- **原生右键菜单**：菜单由 Explorer 进程内的代理弹出（第三方扩展、图标、深色主题与资源管理器完全一致），XkDesk 的自定义项（整理至新格子、整理至新文件夹、作为桌面格子显示、xk-desk 子菜单等）作为 Shell 扩展注入。
+- **原生右键菜单**：菜单由 Explorer 进程内的代理弹出（第三方扩展、图标、深色主题与资源管理器完全一致），DeskNext 的自定义项（整理至新格子、整理至新文件夹、作为桌面格子显示、桌面整理 子菜单等）作为 Shell 扩展注入。
 - **设置**（托盘 → 设置，或再次启动程序）：常规（双击隐藏、开机自启、图标大小、格子透明度实时预览）、整理规则。
 - **单实例**：再次启动会打开已运行实例的设置窗口。
 
 ## 构建
 
-需要：.NET 9 SDK、Visual Studio 2022（含“使用 C++ 的桌面开发”，用于编译 `src/XkShellExt`）。
+需要：.NET 9 SDK、Visual Studio 2022（含“使用 C++ 的桌面开发”，用于编译 `src/DeskNextShellExt`）。
 
 ```powershell
-dotnet build XkDesk.sln -c Release      # 同时编译 C++ 扩展 XkShellExt.dll
-dotnet test  XkDesk.sln -c Release
+dotnet build DeskNext.sln -c Release      # 同时编译 C++ 扩展 DeskNextShellExt.dll
+dotnet test  DeskNext.sln -c Release
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/publish.ps1   # 发布到 dist/（依赖框架，win-x64）
 ```
 
-`tools/publish.ps1 -SingleFile` 可把托管程序集合并为单个 exe（`XkShellExt.dll` 仍在旁边）。发布产物需要目标机器安装 .NET 9 桌面运行时。
+`tools/publish.ps1 -SingleFile` 可把托管程序集合并为单个 exe（`DeskNextShellExt.dll` 仍在旁边）。发布产物需要目标机器安装 .NET 9 桌面运行时。
 
-菜单与托盘用到的图标由 `tools/gen-icons.ps1` 生成（输出 `src/XkDesk/Assets/*.ico`，已提交）。
+菜单与托盘用到的图标由 `tools/gen-icons.ps1` 生成（输出 `src/DeskNext/Assets/*.ico`，已提交）。
 
 ## 运行参数
 
@@ -39,7 +39,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/publish.ps1   # 发布
 
 ## 魔改入口：自定义右键菜单项
 
-所有自定义菜单项都集中在 `src/XkDesk/Desktop/MenuExtensions.cs` 的 `Items` 列表。加一个项只需在列表里追加：
+所有自定义菜单项都集中在 `src/DeskNext/Desktop/MenuExtensions.cs` 的 `Items` 列表。加一个项只需在列表里追加：
 
 ```csharp
 new()
@@ -55,18 +55,18 @@ new()
 
 ## 数据位置
 
-数据根目录（下称“数据根”）：程序位于 `C:\Program Files`、`C:\Program Files (x86)` 之下时为 `%AppData%\XkDesk`（该处程序目录通常不可写）；其余位置（便携版、解压/自行安装的目录）一律为程序目录下的 `data\`。
+数据根目录（下称“数据根”）：程序位于 `C:\Program Files`、`C:\Program Files (x86)` 之下时为 `%AppData%\DeskNext`（该处程序目录通常不可写）；其余位置（便携版、解压/自行安装的目录）一律为程序目录下的 `data\`。
 
-- 数据根下：`layout.json`（布局与隐藏状态）、`settings.json`（设置）、`organize-undo.json`、`logs\`（`xkdesk.log`、`shellext.log`）、`running.flag`（运行标记，异常退出时残留，下次启动记录日志）
+- 数据根下：`layout.json`（布局与隐藏状态）、`settings.json`（设置）、`organize-undo.json`、`logs\`（`desknext.log`、`shellext.log`）、`running.flag`（运行标记，异常退出时残留，下次启动记录日志）
 - 数据根下：`shellext\`（按哈希命名的扩展 DLL 副本）、`icons\`（菜单图标）
-- 旧版（数据在 `%AppData%\XkDesk`、`%LocalAppData%\XkDesk`）不会自动迁移；需要旧布局时手动把 `%AppData%\XkDesk\layout.json` 等复制到新的数据根即可。
+- 旧版（数据在 `%AppData%\DeskNext`、`%LocalAppData%\DeskNext`）不会自动迁移；需要旧布局时手动把 `%AppData%\DeskNext\layout.json` 等复制到新的数据根即可。
 
 ## 卸载
 
-1. 运行 `XkDesk.exe --exit` 退出程序（或托盘 → 退出）。
-2. 运行 `XkDesk.exe --unregister` 删除 Shell 扩展注册项；托盘 / 设置里取消“开机自启”（或删除 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\XkDesk`）。
-3. 删除整个程序目录即可（若提示 `data\shellext` 里的 DLL 被占用，重启资源管理器后再删）；若程序装在 Program Files 下，数据在 `%AppData%\XkDesk`，一并手动删除。
+1. 运行 `DeskNext.exe --exit` 退出程序（或托盘 → 退出）。
+2. 运行 `DeskNext.exe --unregister` 删除 Shell 扩展注册项；托盘 / 设置里取消“开机自启”（或删除 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\DeskNext`）。
+3. 删除整个程序目录即可（若提示 `data\shellext` 里的 DLL 被占用，重启资源管理器后再删）；若程序装在 Program Files 下，数据在 `%AppData%\DeskNext`，一并手动删除。
 
 ## 已知限制
 
-Explorer 里已经加载了旧版菜单组件时，新版本启动会尝试让旧代理退出并重新加载；若仍是旧版，XkDesk 会在日志里警告并在托盘弹一次气泡提示“已更新右键菜单组件，重启资源管理器后生效”（不会自动重启 Explorer）。
+Explorer 里已经加载了旧版菜单组件时，新版本启动会尝试让旧代理退出并重新加载；若仍是旧版，DeskNext 会在日志里警告并在托盘弹一次气泡提示“已更新右键菜单组件，重启资源管理器后生效”（不会自动重启 Explorer）。

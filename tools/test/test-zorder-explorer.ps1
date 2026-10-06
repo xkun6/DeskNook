@@ -1,11 +1,11 @@
 ﻿. $PSScriptRoot\common.ps1
-Stop-XkDesk | Out-Null
+Stop-DeskNext | Out-Null
 Remove-TestFiles
 New-TestFile -Name xk-test-a.txt | Out-Null
 Wait-Ms 1000
 Minimize-All
 try {
-  Start-XkDesk | Out-Null; Wait-Ms 1500
+  Start-DeskNext | Out-Null; Wait-Ms 1500
   $a = Get-IconCenter 'xk-test-a.txt'
   $pr = Start-Process cmd.exe -ArgumentList '/k','title xk-test-win' -PassThru; Wait-Ms 1500
   Save-Screen -Name s6-cmd | Out-Null
@@ -24,4 +24,4 @@ try {
   "reattach: $([bool]$hit)"; Wait-Ms 3000
   Minimize-All; Wait-Ms 1000
   Save-Screen -Name s6-explorer-restart | Out-Null
-} finally { Stop-XkDesk | Out-Null; Restore-All }
+} finally { Stop-DeskNext | Out-Null; Restore-All }

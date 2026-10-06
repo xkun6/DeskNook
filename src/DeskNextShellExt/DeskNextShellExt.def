@@ -1,0 +1,5 @@
+LIBRARY DeskNextShellExt
+EXPORTS
+    DllGetClassObject   PRIVATE
+    DllCanUnloadNow     PRIVATE
+    DnHookProc

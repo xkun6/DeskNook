@@ -1,12 +1,12 @@
 ﻿. $PSScriptRoot\common.ps1
-Stop-XkDesk | Out-Null
+Stop-DeskNext | Out-Null
 Remove-TestFiles
 New-TestFile -Name xk-test-a.txt | Out-Null
 New-TestFile -Name xk-test-b.txt | Out-Null
 Wait-Ms 1000
 Minimize-All
 try {
-  Start-XkDesk | Out-Null; Wait-Ms 1500
+  Start-DeskNext | Out-Null; Wait-Ms 1500
   $a = Get-IconCenter 'xk-test-a.txt'; $b = Get-IconCenter 'xk-test-b.txt'
   # 子菜单：发送到
   Click-Mouse $a.X $a.Y -Button Right; Wait-Ms 900
@@ -30,4 +30,4 @@ try {
   Restore-All; Wait-Ms 500
   Send-WinD; Wait-Ms 1500; Save-Screen -Name s5-wind | Out-Null
   Send-WinD; Wait-Ms 1000
-} finally { Stop-XkDesk | Out-Null; Stop-ProcessByName notepad; Restore-All }
+} finally { Stop-DeskNext | Out-Null; Stop-ProcessByName notepad; Restore-All }

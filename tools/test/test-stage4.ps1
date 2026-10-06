@@ -15,12 +15,12 @@ function Has-Text { param($Texts, [string]$Pat) return @($Texts | Where-Object {
 function Shot { param([string]$Name) return (Save-Screen -Name $Name) }
 
 Backup-HState
-Stop-XkDesk | Out-Null
+Stop-DeskNext | Out-Null
 Clear-TestArtifacts
 Clear-NewFolders
 Remove-Item $Script:FlagPath -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $Script:AppDataDir 'settings.json') -Force -ErrorAction SilentlyContinue
-Remove-ItemProperty -Path $Script:RunKeyPath -Name XkDesk -ErrorAction SilentlyContinue
+Remove-ItemProperty -Path $Script:RunKeyPath -Name DeskNext -ErrorAction SilentlyContinue
 foreach ($f in 'a', 'b', 'c') { New-TestFile -Name "xk-test-$f.txt" -Content "xk-test $f" | Out-Null }
 Wait-Ms 800
 Minimize-All
@@ -32,9 +32,9 @@ try {
         Remove-Item (Join-Path $Script:AppDataDir 'layout.json') -Force -ErrorAction SilentlyContinue
         $Script:ExplorerPids = Get-ExplorerPids
         $mk = Get-LogMark
-        $shellDlls = @(Get-ChildItem (Join-Path $Script:DataDir 'shellext') -Filter 'XkShellExt.*.dll' -ErrorAction SilentlyContinue | ForEach-Object Name)
+        $shellDlls = @(Get-ChildItem (Join-Path $Script:DataDir 'shellext') -Filter 'DeskNextShellExt.*.dll' -ErrorAction SilentlyContinue | ForEach-Object Name)
         Write-Host "启动前已有的 DLL 副本：$($shellDlls -join ', ')"
-        Start-XkDesk | Out-Null
+        Start-DeskNext | Out-Null
         Invoke-Test '版本检测：旧版组件（Explorer 内）→ 日志警告 + 托盘气泡' {
             $l = Wait-Log -Pattern '菜单组件版本一致|警告：Explorer 内的菜单组件是旧版' -Since $mk -TimeoutSec 20
             Assert-True $l '日志里没有版本检测结果'
@@ -43,7 +43,7 @@ try {
             "$l"
         }
         Wait-Ms 4000
-        Stop-XkDesk | Out-Null
+        Stop-DeskNext | Out-Null
         Wait-Ms 1500
         Assert-ExplorerAlive
     }
@@ -54,27 +54,27 @@ try {
     Write-Host "Explorer PID：$($Script:ExplorerPids -join ',')"
     Minimize-All
     Remove-Item (Join-Path $Script:AppDataDir 'layout.json') -Force -ErrorAction SilentlyContinue
-    Start-XkDesk | Out-Null; Wait-Ms 2500; Wait-Saved; Stop-XkDesk | Out-Null; Wait-Ms 2000
+    Start-DeskNext | Out-Null; Wait-Ms 2500; Wait-Saved; Stop-DeskNext | Out-Null; Wait-Ms 2000
 
     if (Want '版本二') {
         $mk = Get-LogMark
-        Start-XkDesk | Out-Null
+        Start-DeskNext | Out-Null
         Invoke-Test '版本检测：重启 Explorer 后版本一致，不提示' {
             $l = Wait-Log -Pattern '菜单组件版本一致|警告：Explorer 内的菜单组件是旧版' -Since $mk -TimeoutSec 20
             Assert-True ($l -and $l -match '版本一致') "期望版本一致，实际：$l"
             Assert-True (-not (Wait-Log -Pattern '托盘气泡' -Since $mk -TimeoutSec 2)) '版本一致时不应弹气泡'
             $l
         }
-        Stop-XkDesk | Out-Null; Wait-Ms 1500
+        Stop-DeskNext | Out-Null; Wait-Ms 1500
     }
 
     if (Want '版本三') {
         $mk = Get-LogMark
-        Start-XkDesk -AppArgs @('--simulate-outdated-proxy') | Out-Null
+        Start-DeskNext -AppArgs @('--simulate-outdated-proxy') | Out-Null
         Invoke-Test '版本检测（模拟旧版）：日志警告 + 托盘气泡' {
             $l = Wait-Log -Pattern '警告：Explorer 内的菜单组件是旧版' -Since $mk -TimeoutSec 20
             Assert-True $l '日志里没有旧版警告'
-            $b = Wait-Log -Pattern '托盘气泡：xk-desk - 已更新右键菜单组件，重启资源管理器后生效' -Since $mk -TimeoutSec 5
+            $b = Wait-Log -Pattern '托盘气泡：桌面整理 - 已更新右键菜单组件，重启资源管理器后生效' -Since $mk -TimeoutSec 5
             Assert-True $b '日志里没有托盘气泡记录'
             Wait-Ms 1200
             Shot 'h-00b-balloon' | Out-Null
@@ -82,12 +82,12 @@ try {
             Wait-Ms 5000
             $l
         }
-        Stop-XkDesk | Out-Null; Wait-Ms 1500
+        Stop-DeskNext | Out-Null; Wait-Ms 1500
     }
 
     # ================================================================ 1 双击空白处隐藏 / 显示
     $mk = Get-LogMark
-    Start-XkDesk | Out-Null; Wait-Ms 2500
+    Start-DeskNext | Out-Null; Wait-Ms 2500
     $base = Shot 'h-01-visible'
     Invoke-Test '双击空白处隐藏（淡出）→ 只剩壁纸' {
         DoubleClick-Mouse $bp.X $bp.Y -Delay 40
@@ -96,8 +96,8 @@ try {
         $hid = Shot 'h-02-hidden'
         $d = Rect-Diff $base $hid $Script:IconRect
         Assert-True ($d -gt 0.02) "图标区域没有变化（diff=$d）"
-        Assert-True (-not [XkTest.Ext]::SystemListViewVisible()) '隐藏状态下系统 ListView 不应出现'
-        Assert-True (Wait-Log -Pattern 'XkDesk 图标显示状态：隐藏' -Since $mk -TimeoutSec 3) '日志没有隐藏记录'
+        Assert-True (-not [DnTest.Ext]::SystemListViewVisible()) '隐藏状态下系统 ListView 不应出现'
+        Assert-True (Wait-Log -Pattern 'DeskNext 图标显示状态：隐藏' -Since $mk -TimeoutSec 3) '日志没有隐藏记录'
         Wait-Saved
         Assert-True ((Read-Json 'layout.json').View.IconsHidden -eq $true) 'layout.json 没有持久化隐藏状态'
         "diff=$([Math]::Round($d, 3))"
@@ -110,13 +110,13 @@ try {
         "项数=$($r.Texts.Count)"
     }
     Invoke-Test '重启程序后保持隐藏' {
-        Stop-XkDesk | Out-Null; Wait-Ms 1500
-        Assert-True ([XkTest.Ext]::SystemListViewVisible()) '退出后系统图标应恢复'
-        Start-XkDesk | Out-Null; Wait-Ms 2500
+        Stop-DeskNext | Out-Null; Wait-Ms 1500
+        Assert-True ([DnTest.Ext]::SystemListViewVisible()) '退出后系统图标应恢复'
+        Start-DeskNext | Out-Null; Wait-Ms 2500
         $hid2 = Shot 'h-04-restart-hidden'
         $d = Rect-Diff $base $hid2 $Script:IconRect
         Assert-True ($d -gt 0.02) "重启后图标又出现了（diff=$d）"
-        Assert-True (-not [XkTest.Ext]::SystemListViewVisible()) '系统 ListView 不应出现'
+        Assert-True (-not [DnTest.Ext]::SystemListViewVisible()) '系统 ListView 不应出现'
         "diff=$([Math]::Round($d, 3))"
     }
     Invoke-Test '再次双击空白处恢复（淡入）' {
@@ -134,12 +134,12 @@ try {
     Invoke-Test '第二次启动 → 设置窗口；关闭双击隐藏后双击无效' {
         $mk2 = Get-LogMark
         Start-Process -FilePath $Script:ExePath | Out-Null   # 第二实例 → 打开设置窗口
-        $w = Get-UiaWindow 'xk-desk 设置' 6000
+        $w = Get-UiaWindow '桌面整理设置' 6000
         Assert-True $w '第二次启动后没有出现设置窗口'
         Assert-True (Wait-Log -Pattern '收到第二个实例的请求：打开设置窗口' -Since $mk2 -TimeoutSec 3) '日志没有第二实例请求'
         Wait-Ms 600
         Save-Screen -Name 'h-06-settings-general' -Rect (Get-WindowRect $w) | Out-Null
-        Assert-True (@(Get-Process -Name XkDesk).Count -eq 1) '第二个实例应自行退出（只剩一个 XkDesk 进程）'
+        Assert-True (@(Get-Process -Name DeskNext).Count -eq 1) '第二个实例应自行退出（只剩一个 DeskNext 进程）'
         $chk = Get-UiaById $w 'DblChk'
         Assert-True ($chk.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Current.ToggleState -eq 'On') '双击开关默认应为开'
         Click-Uia $chk
@@ -154,7 +154,7 @@ try {
     }
     # 恢复开关，供后续用例使用
     Start-Process -FilePath $Script:ExePath | Out-Null
-    $w = Get-UiaWindow 'xk-desk 设置' 6000
+    $w = Get-UiaWindow '桌面整理设置' 6000
     if ($w) { Click-Uia (Get-UiaById $w 'DblChk'); Click-Uia (Get-UiaById $w 'BtnSave') 800 }
     Wait-Ms 500
 
@@ -231,8 +231,8 @@ try {
     # ================================================================ 4 设置窗口常规页：透明度实时预览、图标大小
     if (Want '设置') {
         Invoke-Test '设置：透明度实时预览 + 图标大小切换 + 自启复选框' {
-            $w = Get-UiaWindow 'xk-desk 设置' 1500
-            if (-not $w) { Start-Process -FilePath $Script:ExePath | Out-Null; $w = Get-UiaWindow 'xk-desk 设置' 6000 }
+            $w = Get-UiaWindow '桌面整理设置' 1500
+            if (-not $w) { Start-Process -FilePath $Script:ExePath | Out-Null; $w = Get-UiaWindow '桌面整理设置' 6000 }
             Assert-True $w '设置窗口未出现'
             $box = (Get-Boxes | Select-Object -First 1)
             Assert-True $box '需要一个格子来观察透明度'
@@ -253,7 +253,7 @@ try {
             Assert-True ($d2 -lt 0.1) "取消后透明度未还原（diff=$d2）"
             # 图标大小：大 → 保存
             Start-Process -FilePath $Script:ExePath | Out-Null
-            $w = Get-UiaWindow 'xk-desk 设置' 6000; Wait-Ms 500
+            $w = Get-UiaWindow '桌面整理设置' 6000; Wait-Ms 500
             Click-Uia (Get-UiaById $w 'SizeLarge')
             Click-Uia (Get-UiaById $w 'BtnSave') 1200
             Wait-Saved
@@ -262,7 +262,7 @@ try {
             Shot 'h-23-icons-large' | Out-Null
             # 改回跟随系统
             Start-Process -FilePath $Script:ExePath | Out-Null
-            $w = Get-UiaWindow 'xk-desk 设置' 6000; Wait-Ms 500
+            $w = Get-UiaWindow '桌面整理设置' 6000; Wait-Ms 500
             Click-Uia (Get-UiaById $w 'SizeSystem')
             Click-Uia (Get-UiaById $w 'BtnSave') 1200
             Wait-Saved
@@ -270,7 +270,7 @@ try {
             Shot 'h-24-icons-system' | Out-Null
             # 设置窗口里的自启复选框
             Start-Process -FilePath $Script:ExePath | Out-Null
-            $w = Get-UiaWindow 'xk-desk 设置' 6000; Wait-Ms 500
+            $w = Get-UiaWindow '桌面整理设置' 6000; Wait-Ms 500
             Click-Uia (Get-UiaById $w 'AutoChk') 600
             Assert-True ((Get-RunValue) -eq ('"' + $Script:ExePath + '"')) '设置里勾选自启后注册表值不对'
             Click-Uia (Get-UiaById $w 'AutoChk') 600
@@ -291,10 +291,10 @@ try {
             Save-Screen -Name 'h-30-item-menu-crop' -Rect @($a.X, $a.Y, 460, 760) | Out-Null
             '自由区项：有“整理至新格子”，无“打开所在位置”'
         }
-        Invoke-Test '菜单图标：背景菜单 + xk-desk 子菜单' {
+        Invoke-Test '菜单图标：背景菜单 + 桌面整理 子菜单' {
             Click-Mouse $bp.X $bp.Y -Button Right -Delay 1200
-            $m = Find-MenuItem 'xk-desk' -TimeoutMs 4000
-            Assert-True $m '背景菜单缺少 xk-desk'
+            $m = Find-MenuItem '桌面整理' -TimeoutMs 4000
+            Assert-True $m '背景菜单缺少 桌面整理'
             Move-Mouse $m.X $m.Y 1200
             Save-Screen -Name 'h-31-bg-submenu' -Rect @(($bp.X - 20), ($bp.Y - 80), 760, 800) | Out-Null
             Shot 'h-31-bg-submenu-full' | Out-Null
@@ -338,8 +338,8 @@ try {
             $texts = @(Get-MenuTexts)
             Shot 'h-41-menu-after-restart' | Out-Null
             Press-Key Escape; Press-Key Escape
-            Assert-True (Has-Text $texts 'xk-desk') "重启后背景菜单缺少 xk-desk（代理失效？）：$($texts -join '|')"
-            Assert-True (-not [XkTest.Ext]::SystemListViewVisible()) '重启后系统 ListView 应保持隐藏'
+            Assert-True (Has-Text $texts '桌面整理') "重启后背景菜单缺少 桌面整理（代理失效？）：$($texts -join '|')"
+            Assert-True (-not [DnTest.Ext]::SystemListViewVisible()) '重启后系统 ListView 应保持隐藏'
             "菜单项=$($texts.Count)"
         }
     }
@@ -348,15 +348,15 @@ try {
     if (Want '崩溃') {
         Invoke-Test '崩溃兜底：强杀后重启日志记录异常退出；正常退出删除标记' {
             Assert-True (Test-Path $Script:FlagPath) '运行期间应存在 running.flag'
-            Stop-ProcessByName XkDesk; Wait-Ms 800
-            [void][XkTest.Native]::ShowSystemIcons()
+            Stop-ProcessByName DeskNext; Wait-Ms 800
+            [void][DnTest.Native]::ShowSystemIcons()
             Assert-True (Test-Path $Script:FlagPath) '强杀后标记应残留'
             $mk4 = Get-LogMark
-            Start-XkDesk | Out-Null; Wait-Ms 1500
+            Start-DeskNext | Out-Null; Wait-Ms 1500
             Assert-True (Wait-Log -Pattern '检测到上次异常退出' -Since $mk4 -TimeoutSec 5) '日志没有记录上次异常退出'
-            Stop-XkDesk | Out-Null; Wait-Ms 800
+            Stop-DeskNext | Out-Null; Wait-Ms 800
             Assert-True (-not (Test-Path $Script:FlagPath)) '正常退出后应删除 running.flag'
-            Assert-True ([XkTest.Ext]::SystemListViewVisible()) '正常退出后系统图标应恢复'
+            Assert-True ([DnTest.Ext]::SystemListViewVisible()) '正常退出后系统图标应恢复'
             '强杀后残留标记 → 重启记录日志 → 正常退出清除'
         }
     }
@@ -364,12 +364,12 @@ try {
     # ================================================================ 8 托盘“退出”
     if (Want '退出') {
         Invoke-Test '托盘退出：进程结束、系统图标恢复' {
-            Start-XkDesk | Out-Null; Wait-Ms 2500
+            Start-DeskNext | Out-Null; Wait-Ms 2500
             Open-TrayMenu | Out-Null; Click-TrayMenuItem '退出' 1500
             $deadline = (Get-Date).AddSeconds(8)
-            while ((Get-Date) -lt $deadline -and (Get-Process -Name XkDesk -ErrorAction SilentlyContinue)) { Start-Sleep -Milliseconds 200 }
-            Assert-True (-not (Get-Process -Name XkDesk -ErrorAction SilentlyContinue)) '托盘退出后进程仍在'
-            Assert-True ([XkTest.Ext]::SystemListViewVisible()) '退出后系统图标应恢复'
+            while ((Get-Date) -lt $deadline -and (Get-Process -Name DeskNext -ErrorAction SilentlyContinue)) { Start-Sleep -Milliseconds 200 }
+            Assert-True (-not (Get-Process -Name DeskNext -ErrorAction SilentlyContinue)) '托盘退出后进程仍在'
+            Assert-True ([DnTest.Ext]::SystemListViewVisible()) '退出后系统图标应恢复'
             Wait-Ms 1000
             $t = Locate-TrayIcon
             Assert-True (-not $t) '退出后托盘图标应消失'
@@ -381,9 +381,9 @@ try {
 finally {
     try { Close-SettingsWindow } catch { }
     try { Press-Key Escape } catch { }
-    Stop-XkDesk | Out-Null
+    Stop-DeskNext | Out-Null
     Wait-Ms 800
-    [void][XkTest.Native]::ShowSystemIcons()
+    [void][DnTest.Native]::ShowSystemIcons()
     Clear-TestArtifacts
     Clear-NewFolders
     Remove-Item $Script:FlagPath -Force -ErrorAction SilentlyContinue
@@ -392,5 +392,5 @@ finally {
     Stop-ProcessByName notepad
 }
 $fails = Show-Summary
-Write-Host "XkDesk 进程：$(@(Get-Process -Name XkDesk -ErrorAction SilentlyContinue).Count)；系统图标可见：$([XkTest.Ext]::SystemListViewVisible())；Run 值：$(Get-RunValue)"
+Write-Host "DeskNext 进程：$(@(Get-Process -Name DeskNext -ErrorAction SilentlyContinue).Count)；系统图标可见：$([DnTest.Ext]::SystemListViewVisible())；Run 值：$(Get-RunValue)"
 exit $fails

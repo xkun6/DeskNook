@@ -7,7 +7,7 @@ Set-Content -Path (Join-Path $Script:MapDir 'xk-test-m1.txt') -Value 'm1'
 Set-Content -Path (Join-Path $Script:MapDir 'xk-test-m2.txt') -Value 'm2'
 try {
     Invoke-Test 'B01 新建空格子，用「移动到格子」菜单把图标移入' {
-        Click-ContextMenu 1500 300 -Path @('xk-desk ▸ 新建格子')
+        Click-ContextMenu 1500 300 -Path @('桌面整理 ▸ 新建格子')
         Assert-True (Wait-Layout { param($l) @($l.Boxes).Count -eq 1 }) '没有新格子'
         Wait-Saved
         $p = Get-IconCenter 'xk-test-a.txt'
@@ -56,7 +56,7 @@ try {
     }
 
     Invoke-Test 'B04 新建映射格子（IFileOpenDialog 选目录）' {
-        Click-ContextMenu 1900 800 -Path @('xk-desk ▸ 新建映射格子')
+        Click-ContextMenu 1900 800 -Path @('桌面整理 ▸ 新建映射格子')
         Wait-Ms 1500
         Save-Screen -Name b-b04-folder-dialog | Out-Null
         Type-Text $Script:MapDir; Wait-Ms 300; Press-Key Enter; Wait-Ms 1500

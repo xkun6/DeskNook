@@ -1,12 +1,12 @@
 ﻿. $PSScriptRoot\common.ps1
-Stop-XkDesk | Out-Null
+Stop-DeskNext | Out-Null
 Remove-TestFiles
 New-TestFile -Name xk-test-a.txt -Content "hello" | Out-Null
 $dd = [Environment]::GetFolderPath('Desktop')
 Wait-Ms 1000
 Minimize-All
 try {
-  Start-XkDesk | Out-Null; Wait-Ms 1500
+  Start-DeskNext | Out-Null; Wait-Ms 1500
   $a = Get-IconCenter 'xk-test-a.txt'
   Click-Mouse $a.X $a.Y; Wait-Ms 300
   Press-Key C -Ctrl; Wait-Ms 600
@@ -28,4 +28,4 @@ try {
     "copy exists after undo: $(Test-Path (Join-Path $dd $copy))"
     Save-Screen -Name u3-after-undo | Out-Null
   }
-} finally { Stop-XkDesk | Out-Null; Remove-TestFiles; Restore-All }
+} finally { Stop-DeskNext | Out-Null; Remove-TestFiles; Restore-All }

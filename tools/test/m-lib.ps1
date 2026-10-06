@@ -6,11 +6,11 @@ $Script:MBackupDir = Join-Path $env:TEMP 'xk-m-backup'
 $Script:ShellLogPath = Join-Path $Script:DataDir 'logs\shellext.log'
 $Script:AppDataFiles = @('layout.json', 'settings.json', 'organize-undo.json')
 
-if (-not ('XkTest.Ext' -as [type])) {
+if (-not ('DnTest.Ext' -as [type])) {
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
-namespace XkTest {
+namespace DnTest {
   public static class Ext {
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string c, string t);
@@ -20,7 +20,7 @@ namespace XkTest {
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h, System.Text.StringBuilder sb, int max);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
     public static uint ShellPid() { uint pid; IntPtr pm = FindWindow("Progman", null); if (pm == IntPtr.Zero) return 0; GetWindowThreadProcessId(pm, out pid); return pid; }
-    // 系统桌面 SysListView32 是否可见（XkDesk 运行时应一直隐藏）
+    // 系统桌面 SysListView32 是否可见（DeskNext 运行时应一直隐藏）
     public static bool SystemListViewVisible() {
       IntPtr pm = FindWindow("Progman", null);
       IntPtr dv = pm == IntPtr.Zero ? IntPtr.Zero : FindWindowEx(pm, IntPtr.Zero, "SHELLDLL_DefView", null);
@@ -94,7 +94,7 @@ function Wait-FileLog {
 }
 
 # ---------- Explorer ----------
-function Get-ExplorerPids { return @([XkTest.Ext]::ShellPid()) }
+function Get-ExplorerPids { return @([DnTest.Ext]::ShellPid()) }
 function Restart-Explorer {
     Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 1500
@@ -102,7 +102,7 @@ function Restart-Explorer {
 }
 
 # ---------- 菜单 ----------
-$Script:OurItems = @('整理至新格子', '整理至新文件夹', '作为桌面格子显示', '打开所在位置', '一键整理', 'xk-desk', '移动到格子', '移出格子')
+$Script:OurItems = @('整理至新格子', '整理至新文件夹', '作为桌面格子显示', '打开所在位置', '一键整理', '桌面整理', '移动到格子', '移出格子')
 
 # 右键 (x,y)，等待菜单出现，截图并返回菜单顶层文本；Esc 关闭。返回 @{ Texts; Shot; Ms }
 function Capture-Menu {

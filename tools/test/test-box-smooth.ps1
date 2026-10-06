@@ -9,14 +9,14 @@ Get-ChildItem $Script:DataDir -Filter *.json -ErrorAction SilentlyContinue | Cop
 function Drag-Exact {
     param([int]$X1, [int]$Y1, [int]$Dx, [int]$Dy, [string]$Shot, [int[]]$ShotRect, [int]$Steps = 8)
     Move-Mouse $X1 $Y1 120
-    [XkTest.Native]::Mouse(0x2); Wait-Ms 120
+    [DnTest.Native]::Mouse(0x2); Wait-Ms 120
     for ($i = 1; $i -le $Steps; $i++) {
-        [void][XkTest.Native]::SetCursorPos([int]($X1 + $Dx * $i / $Steps), [int]($Y1 + $Dy * $i / $Steps)); Wait-Ms 20
+        [void][DnTest.Native]::SetCursorPos([int]($X1 + $Dx * $i / $Steps), [int]($Y1 + $Dy * $i / $Steps)); Wait-Ms 20
     }
-    [void][XkTest.Native]::SetCursorPos($X1 + $Dx, $Y1 + $Dy)
+    [void][DnTest.Native]::SetCursorPos($X1 + $Dx, $Y1 + $Dy)
     Wait-Ms 300
     if ($Shot) { Save-Screen -Name $Shot -Rect $ShotRect | Out-Null }
-    [XkTest.Native]::Mouse(0x4); Wait-Ms 400
+    [DnTest.Native]::Mouse(0x4); Wait-Ms 400
     Wait-Saved
 }
 function Near { param($a, $b, $tol = 1) return ([Math]::Abs([double]$a - [double]$b) -le $tol) }
@@ -24,7 +24,7 @@ function Near { param($a, $b, $tol = 1) return ([Math]::Abs([double]$a - [double
 Start-BoxTest -Files @('a', 'b', 'c')
 try {
     Invoke-Test 'S01 新建格子' {
-        Click-ContextMenu 1500 700 -Path @('xk-desk ▸ 新建格子')
+        Click-ContextMenu 1500 700 -Path @('桌面整理 ▸ 新建格子')
         Assert-True (Wait-Layout { param($l) @($l.Boxes).Count -eq 1 }) '没有新格子'
         Wait-Ms 600; Wait-Saved
         # 先把格子挪到屏幕中部（远离工作区边缘与桌面图标），避免边缘吸附干扰后续用例
@@ -76,7 +76,7 @@ try {
     }
 
     Invoke-Test 'S05 靠近另一格子边缘 5px 吸附并出辅助线；12px 不吸附' {
-        Click-ContextMenu 700 250 -Path @('xk-desk ▸ 新建格子')
+        Click-ContextMenu 700 250 -Path @('桌面整理 ▸ 新建格子')
         Assert-True (Wait-Layout { param($l) @($l.Boxes).Count -eq 2 }) '没有第二个格子'
         Wait-Ms 600; Wait-Saved
         $b2 = (Get-Boxes)[1].Rect
@@ -120,29 +120,29 @@ try {
 
     Invoke-Test 'S07 拖动平滑度：60 步 MouseMove，期间不重建桌面' {
         $b = (Get-Boxes)[0].Rect
-        $proc = Get-Process -Name XkDesk
+        $proc = Get-Process -Name DeskNext
         $cpu0 = $proc.TotalProcessorTime.TotalMilliseconds
         $mark = Get-LogMark
         $x1 = [int]($b.X + 100); $y1 = [int]($b.Y + 16)
         Move-Mouse $x1 $y1 150
-        [XkTest.Native]::Mouse(0x2); Wait-Ms 100
+        [DnTest.Native]::Mouse(0x2); Wait-Ms 100
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
         $per = New-Object System.Collections.Generic.List[double]
         for ($i = 1; $i -le 60; $i++) {
             $t = $sw.Elapsed.TotalMilliseconds
-            [void][XkTest.Native]::SetCursorPos($x1 - $i, $y1 + [int]($i / 2))
+            [void][DnTest.Native]::SetCursorPos($x1 - $i, $y1 + [int]($i / 2))
             $per.Add($sw.Elapsed.TotalMilliseconds - $t)
             Start-Sleep -Milliseconds 16
         }
         $total = $sw.Elapsed.TotalMilliseconds
         Wait-Ms 200
         $rebuildsDuring = @(Get-LogSince $mark | Where-Object { $_ -match '桌面重建' }).Count
-        [XkTest.Native]::Mouse(0x4); Wait-Ms 600
+        [DnTest.Native]::Mouse(0x4); Wait-Ms 600
         $proc.Refresh()
         $cpu1 = $proc.TotalProcessorTime.TotalMilliseconds
         Assert-True ($rebuildsDuring -eq 0) "拖动期间重建了 $rebuildsDuring 次"
         $m = ($per | Measure-Object -Average -Maximum)
-        "60 步总耗时 $([Math]::Round($total))ms；SetCursorPos 平均 $([Math]::Round($m.Average,2))ms 最大 $([Math]::Round($m.Maximum,2))ms；XkDesk CPU +$([Math]::Round($cpu1 - $cpu0))ms；拖动期重建=$rebuildsDuring"
+        "60 步总耗时 $([Math]::Round($total))ms；SetCursorPos 平均 $([Math]::Round($m.Average,2))ms 最大 $([Math]::Round($m.Maximum,2))ms；DeskNext CPU +$([Math]::Round($cpu1 - $cpu0))ms；拖动期重建=$rebuildsDuring"
     }
 }
 finally {

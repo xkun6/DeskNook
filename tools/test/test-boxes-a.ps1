@@ -5,7 +5,7 @@ $A = 'xk-test-a.txt'; $B = 'xk-test-b.txt'; $C = 'xk-test-c.txt'
 $KA = Key-Path $A; $KB = Key-Path $B; $KC = Key-Path $C
 try {
     Invoke-Test 'A01 新建格子' {
-        Click-ContextMenu 1500 700 -Path @('xk-desk ▸ 新建格子')
+        Click-ContextMenu 1500 700 -Path @('桌面整理 ▸ 新建格子')
         Assert-True (Wait-Layout { param($l) @($l.Boxes).Count -eq 1 }) '布局里没有新格子'
         Wait-Ms 600
         $bx = (Get-Boxes)[0]
@@ -34,7 +34,7 @@ try {
     }
 
     Invoke-Test 'A03 第二个格子 + 标题栏拖动吸附与对齐辅助线' {
-        Click-ContextMenu 1100 300 -Path @('xk-desk ▸ 新建格子')
+        Click-ContextMenu 1100 300 -Path @('桌面整理 ▸ 新建格子')
         Assert-True (Wait-Layout { param($l) @($l.Boxes).Count -eq 2 }) '没有第二个格子'
         Wait-Ms 600
         $b1 = (Get-Boxes)[0]; $b2 = (Get-Boxes)[1]

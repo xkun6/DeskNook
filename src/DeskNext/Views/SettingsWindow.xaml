@@ -1,0 +1,152 @@
+<Window x:Class="DeskNext.Views.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="桌面整理设置" Width="720" Height="560" MinWidth="620" MinHeight="480"
+        WindowStartupLocation="CenterScreen" Background="#FF202428" Foreground="#FFE6E8EA"
+        FontFamily="Microsoft YaHei UI" FontSize="13" UseLayoutRounding="True">
+    <Window.Resources>
+        <SolidColorBrush x:Key="Panel" Color="#FF2A2F35"/>
+        <SolidColorBrush x:Key="Line" Color="#FF3C434B"/>
+        <SolidColorBrush x:Key="Accent" Color="#FF3D8BFD"/>
+
+        <Style TargetType="TextBlock"><Setter Property="Foreground" Value="#FFE6E8EA"/></Style>
+        <Style TargetType="CheckBox"><Setter Property="Foreground" Value="#FFE6E8EA"/><Setter Property="Margin" Value="0,0,0,12"/></Style>
+        <Style TargetType="RadioButton"><Setter Property="Foreground" Value="#FFE6E8EA"/><Setter Property="Margin" Value="0,0,18,0"/></Style>
+
+        <Style TargetType="Button">
+            <Setter Property="Foreground" Value="#FFE6E8EA"/>
+            <Setter Property="Background" Value="#FF343A41"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+            <Setter Property="Padding" Value="12,5"/>
+            <Setter Property="Margin" Value="0,0,6,6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="bd" Property="Background" Value="#FF414850"/></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{StaticResource Panel}"/>
+            <Setter Property="Foreground" Value="#FFE6E8EA"/>
+            <Setter Property="CaretBrush" Value="#FFE6E8EA"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+            <Setter Property="Padding" Value="6,4"/>
+        </Style>
+
+        <Style TargetType="ListBoxItem">
+            <Setter Property="Foreground" Value="#FFE6E8EA"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="bd" Background="Transparent" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="bd" Property="Background" Value="#FF30363D"/></Trigger>
+                            <Trigger Property="IsSelected" Value="True"><Setter TargetName="bd" Property="Background" Value="#FF3D8BFD"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
+            <Button x:Name="TabGeneral" Content="常规" Click="OnTabGeneral" Padding="22,6"/>
+            <Button x:Name="TabRules" Content="整理规则" Click="OnTabRules" Padding="22,6"/>
+        </StackPanel>
+
+        <Grid Grid.Row="1" x:Name="GeneralPage">
+            <StackPanel Margin="4,4,0,0">
+                <CheckBox x:Name="DblChk" Content="双击桌面空白处隐藏 / 显示图标与格子"/>
+                <CheckBox x:Name="AutoChk" Content="开机自启（立即生效，状态以注册表为准）" Click="OnAutoStartClick"/>
+                <TextBlock Text="图标大小" Margin="0,8,0,6"/>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,18">
+                    <RadioButton x:Name="SizeSystem" GroupName="sz" Content="跟随系统"/>
+                    <RadioButton x:Name="SizeSmall" GroupName="sz" Content="小（32）"/>
+                    <RadioButton x:Name="SizeMedium" GroupName="sz" Content="中（48）"/>
+                    <RadioButton x:Name="SizeLarge" GroupName="sz" Content="大（96）"/>
+                </StackPanel>
+                <DockPanel Margin="0,0,0,6">
+                    <TextBlock Text="格子透明度（实时预览，保存后生效）" DockPanel.Dock="Left"/>
+                    <TextBlock x:Name="OpacityText" DockPanel.Dock="Right" HorizontalAlignment="Right" Foreground="#FF9AA3AD"/>
+                </DockPanel>
+                <Slider x:Name="OpacitySlider" Minimum="0.2" Maximum="1" TickFrequency="0.1" SmallChange="0.05" LargeChange="0.1" ValueChanged="OnOpacityChanged" Width="360" HorizontalAlignment="Left"/>
+                <TextBlock Margin="0,18,0,0" Foreground="#FF9AA3AD" TextWrapping="Wrap" Text="数值越小格子越透明（20%~100%）。图标大小选“跟随系统”时，以系统桌面“查看”菜单里的设置为准。"/>
+            </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="1" x:Name="RulesPage" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+        <TextBlock Grid.Row="0" Margin="0,0,0,10" TextWrapping="Wrap" Foreground="#FF9AA3AD"
+                   Text="一键整理规则：按列表顺序匹配（越靠上优先级越高）。扩展名用空格/逗号分隔，不含点；&lt;dir&gt; 表示文件夹，* 表示其余所有项。虚拟项（此电脑、回收站等）不参与整理。"/>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="220"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Grid Grid.Column="0" Margin="0,0,12,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <ListBox x:Name="RuleList" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}"
+                         SelectionChanged="OnSelectionChanged">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate><TextBlock Text="{Binding Name}"/></DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <WrapPanel Grid.Row="1" Margin="0,8,0,0">
+                    <Button x:Name="BtnUp" Content="上移" Click="OnUp"/>
+                    <Button x:Name="BtnDown" Content="下移" Click="OnDown"/>
+                    <Button x:Name="BtnAdd" Content="新增" Click="OnAdd"/>
+                    <Button x:Name="BtnDelete" Content="删除" Click="OnDelete"/>
+                </WrapPanel>
+            </Grid>
+
+            <Grid Grid.Column="1" x:Name="Editor">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <TextBlock Text="分类名（同名格子会被复用）" Margin="0,0,0,4"/>
+                <TextBox Grid.Row="1" x:Name="NameBox" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
+                <TextBlock Grid.Row="2" Text="扩展名列表" Margin="0,12,0,4"/>
+                <TextBox Grid.Row="3" x:Name="ExtBox" Text="{Binding ExtText, UpdateSourceTrigger=PropertyChanged}"
+                         AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top"/>
+            </Grid>
+        </Grid>
+        </Grid>
+
+        <DockPanel Grid.Row="2" Margin="0,12,0,0" LastChildFill="False">
+            <Button DockPanel.Dock="Left" x:Name="BtnReset" Content="恢复默认" Click="OnReset"/>
+            <Button DockPanel.Dock="Right" x:Name="BtnCancel" Content="取消" Margin="6,0,0,6" Click="OnCancel"/>
+            <Button DockPanel.Dock="Right" x:Name="BtnSave" Content="保存" Background="#FF3D8BFD" BorderBrush="#FF3D8BFD" Margin="6,0,0,6" Click="OnSave"/>
+        </DockPanel>
+    </Grid>
+</Window>

@@ -1,5 +1,0 @@
-LIBRARY XkShellExt
-EXPORTS
-    DllGetClassObject   PRIVATE
-    DllCanUnloadNow     PRIVATE
-    XkHookProc

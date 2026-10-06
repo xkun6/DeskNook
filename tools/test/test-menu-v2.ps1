@@ -16,7 +16,7 @@ function Assert-ExplorerAlive {
 function Has-Text { param($Texts, [string]$Pat) return @($Texts | Where-Object { $_ -like "*$Pat*" }).Count -gt 0 }
 
 Backup-AppData
-Stop-XkDesk | Out-Null
+Stop-DeskNext | Out-Null
 Clear-TestArtifacts
 Clear-NewFolders
 if (Test-Path $Script:TestRoot2) { Remove-Item $Script:TestRoot2 -Recurse -Force -ErrorAction SilentlyContinue }
@@ -32,10 +32,10 @@ Write-Host "Explorer PID：$($Script:ExplorerPids -join ',')"
 Minimize-All
 
 try {
-    # ---------------------------------------------------------------- 0 导入位置（让原生与 XkDesk 的图标位置一致）
+    # ---------------------------------------------------------------- 0 导入位置（让原生与 DeskNext 的图标位置一致）
     for ($k = 0; $k -lt 2; $k++) {
         Remove-Item (Join-Path $Script:AppDataDir 'layout.json') -Force -ErrorAction SilentlyContinue
-        Start-XkDesk | Out-Null; Wait-Ms 2500; Wait-Saved; Stop-XkDesk | Out-Null; Wait-Ms 2500
+        Start-DeskNext | Out-Null; Wait-Ms 2500; Wait-Saved; Stop-DeskNext | Out-Null; Wait-Ms 2500
     }
     $a = Get-IconCenter 'xk-test-a.txt'
     $bp = Get-BlankPoint
@@ -58,12 +58,12 @@ try {
         Assert-ExplorerAlive
     }
 
-    # ---------------------------------------------------------------- 2 启动 XkDesk，D / D'
+    # ---------------------------------------------------------------- 2 启动 DeskNext，D / D'
     $shellMark = Get-FileMark $Script:ShellLogPath
-    $xkMark = Get-LogMark
-    Start-XkDesk | Out-Null; Wait-Ms 3000
+    $dnMark = Get-LogMark
+    Start-DeskNext | Out-Null; Wait-Ms 3000
     Invoke-Test '代理已加载' {
-        $l = Wait-Log -Pattern '菜单代理已(加载|就绪)' -Since $xkMark -TimeoutSec 15
+        $l = Wait-Log -Pattern '菜单代理已(加载|就绪)' -Since $dnMark -TimeoutSec 15
         Assert-True $l '日志里没有「菜单代理已加载/就绪」'
         $Script:Info.LoadLine = $l
         $l
@@ -74,7 +74,7 @@ try {
         $line = Wait-FileLog $Script:ShellLogPath '请求 r\d+ kind=item' $mk 5
         Assert-True $line '代理日志里没有 kind=item 的请求（没走代理？）'
         Assert-True ($r.Texts.Count -gt 5) "菜单项太少：$($r.Texts -join '|')"
-        $Script:Info.XkItem = $r
+        $Script:Info.DnItem = $r
         foreach ($need in '整理至新格子', '整理至新文件夹') { Assert-True (Has-Text $r.Texts $need) "缺少自定义项 $need" }
         "项数=$($r.Texts.Count) 出现耗时=$($r.Ms)ms"
     }
@@ -83,29 +83,29 @@ try {
         $r = Capture-Menu 'm-Dp-xk-bg' $bp.X $bp.Y
         $line = Wait-FileLog $Script:ShellLogPath '请求 r\d+ kind=background' $mk 5
         Assert-True $line '代理日志里没有 kind=background 的请求'
-        $Script:Info.XkBg = $r
+        $Script:Info.DnBg = $r
         Assert-True (Has-Text $r.Texts '一键整理') '缺少 一键整理'
-        Assert-True (Has-Text $r.Texts 'xk-desk') '缺少 xk-desk 子菜单'
+        Assert-True (Has-Text $r.Texts '桌面整理') '缺少 桌面整理 子菜单'
         "项数=$($r.Texts.Count) 出现耗时=$($r.Ms)ms"
     }
     Invoke-Test '对比：图标菜单 C vs D（除自定义项外一致）' {
         $n1 = Normalize-MenuTexts $Script:Info.NativeItem.Texts
-        $n2 = Normalize-MenuTexts $Script:Info.XkItem.Texts
-        $p = New-SideBySide $Script:Info.NativeItem.Shot $Script:Info.XkItem.Shot 'm-cmp-item.png' ($a.X - 10) 0 520 1440 '原生 C' '我们 D'
+        $n2 = Normalize-MenuTexts $Script:Info.DnItem.Texts
+        $p = New-SideBySide $Script:Info.NativeItem.Shot $Script:Info.DnItem.Shot 'm-cmp-item.png' ($a.X - 10) 0 520 1440 '原生 C' '我们 D'
         $same = (($n1 -join '|') -eq ($n2 -join '|'))
         Assert-True $same ("菜单项不一致`n原生: $($n1 -join '|')`n我们: $($n2 -join '|')")
         foreach ($need in '发送到手机', '上传到夸克网盘', '上传到百度网盘', '用手机打开', '同步至其它设备') {
-            if (Has-Text $Script:Info.NativeItem.Texts $need) { Assert-True (Has-Text $Script:Info.XkItem.Texts $need) "缺少 $need" }
+            if (Has-Text $Script:Info.NativeItem.Texts $need) { Assert-True (Has-Text $Script:Info.DnItem.Texts $need) "缺少 $need" }
         }
         "一致，拼接图 $p"
     }
     Invoke-Test "对比：背景菜单 C' vs D'（除自定义项外一致）" {
         $n1 = Normalize-MenuTexts $Script:Info.NativeBg.Texts
-        $n2 = Normalize-MenuTexts $Script:Info.XkBg.Texts
-        $p = New-SideBySide $Script:Info.NativeBg.Shot $Script:Info.XkBg.Shot 'm-cmp-bg.png' ($bp.X - 10) ($bp.Y - 80) 520 760 "原生 C'" "我们 D'"
+        $n2 = Normalize-MenuTexts $Script:Info.DnBg.Texts
+        $p = New-SideBySide $Script:Info.NativeBg.Shot $Script:Info.DnBg.Shot 'm-cmp-bg.png' ($bp.X - 10) ($bp.Y - 80) 520 760 "原生 C'" "我们 D'"
         $same = (($n1 -join '|') -eq ($n2 -join '|'))
         Assert-True $same ("背景菜单不一致`n原生: $($n1 -join '|')`n我们: $($n2 -join '|')")
-        Assert-True (Has-Text $Script:Info.XkBg.Texts 'NVIDIA') '缺少 NVIDIA 控制面板'
+        Assert-True (Has-Text $Script:Info.DnBg.Texts 'NVIDIA') '缺少 NVIDIA 控制面板'
         "一致，拼接图 $p"
     }
     Assert-ExplorerAlive
@@ -160,15 +160,15 @@ try {
         Assert-ExplorerAlive
     }
 
-    # ---------------------------------------------------------------- 4 背景菜单：xk-desk 子菜单、一键整理、撤销整理
+    # ---------------------------------------------------------------- 4 背景菜单：桌面整理 子菜单、一键整理、撤销整理
     if (Want '背景') {
-        Invoke-Test '背景菜单 xk-desk 子菜单' {
+        Invoke-Test '背景菜单 桌面整理 子菜单' {
             Click-Mouse $bp.X $bp.Y -Button Right -Delay 900
-            Click-MenuPath @('xk-desk') -SettleMs 900
+            Click-MenuPath @('桌面整理') -SettleMs 900
             $texts = @(Get-MenuTexts)
             Save-Screen -Name 'm-4a-submenu' | Out-Null
             Press-Key Escape; Press-Key Escape; Wait-Ms 300
-            foreach ($need in '新建格子', '新建映射格子', '撤销整理', 'xk-desk 设置', '退出 xk-desk') { Assert-True (Has-Text $texts $need) "子菜单缺少 $need（$($texts -join '|')）" }
+            foreach ($need in '新建格子', '新建映射格子', '撤销整理', '桌面整理设置', '退出桌面整理') { Assert-True (Has-Text $texts $need) "子菜单缺少 $need（$($texts -join '|')）" }
             "子菜单项：$($texts -join '|')"
         }
         Invoke-Test '一键整理 + 撤销整理' {
@@ -180,7 +180,7 @@ try {
             Assert-True $ok '一键整理后没有新增格子'
             $after = Get-BoxCount
             Click-Mouse $bp.X $bp.Y -Button Right -Delay 900
-            Click-MenuPath @('xk-desk', '撤销整理')
+            Click-MenuPath @('桌面整理', '撤销整理')
             $ok2 = Wait-Layout { param($l) @($l.Boxes).Count -eq $before } 6
             Save-Screen -Name 'm-4c-undone' | Out-Null
             Assert-True $ok2 "撤销整理后格子数应为 $before"
@@ -227,7 +227,7 @@ try {
             Assert-True $l '没有出现原位重命名框'
             $l
         }
-        Invoke-Test '查看 ▸ 小图标/原大小 → XkDesk 图标大小随之变化' {
+        Invoke-Test '查看 ▸ 小图标/原大小 → DeskNext 图标大小随之变化' {
             Wait-Saved
             $orig = [int](Read-Layout).View.IconSize
             $Script:Info.OrigSize = $orig
@@ -244,25 +244,25 @@ try {
             Assert-True $ok2 "没能恢复到原图标大小 $orig"
             "原=$orig → 32 → $orig"
         }
-        Invoke-Test '查看 ▸ 显示桌面图标 → XkDesk 图标隐藏/显示，系统 ListView 保持隐藏' {
+        Invoke-Test '查看 ▸ 显示桌面图标 → DeskNext 图标隐藏/显示，系统 ListView 保持隐藏' {
             $mk = Get-LogMark
-            Assert-True (-not [XkTest.Ext]::SystemListViewVisible()) '切换前系统 ListView 应已隐藏'
+            Assert-True (-not [DnTest.Ext]::SystemListViewVisible()) '切换前系统 ListView 应已隐藏'
             Click-Mouse $bp.X $bp.Y -Button Right -Delay 900
             Click-MenuPath @('查看', '显示桌面图标')
-            $l1 = Wait-Log -Pattern 'XkDesk 图标显示状态：隐藏' -Since $mk -TimeoutSec 6
+            $l1 = Wait-Log -Pattern 'DeskNext 图标显示状态：隐藏' -Since $mk -TimeoutSec 6
             Wait-Ms 600
             Save-Screen -Name 'm-6c-hidden' | Out-Null
-            $sysHidden = -not [XkTest.Ext]::SystemListViewVisible()
+            $sysHidden = -not [DnTest.Ext]::SystemListViewVisible()
             Click-Mouse $bp.X $bp.Y -Button Right -Delay 900
             Save-Screen -Name 'm-6c-hidden-menu' | Out-Null
             Click-MenuPath @('查看', '显示桌面图标')
-            $l2 = Wait-Log -Pattern 'XkDesk 图标显示状态：显示' -Since $mk -TimeoutSec 6
+            $l2 = Wait-Log -Pattern 'DeskNext 图标显示状态：显示' -Since $mk -TimeoutSec 6
             Wait-Ms 600
             Save-Screen -Name 'm-6c-shown' | Out-Null
-            $sysHidden2 = -not [XkTest.Ext]::SystemListViewVisible()
-            Assert-True $l1 '没有隐藏 XkDesk 图标'
+            $sysHidden2 = -not [DnTest.Ext]::SystemListViewVisible()
+            Assert-True $l1 '没有隐藏 DeskNext 图标'
             Assert-True $sysHidden '隐藏后系统 ListView 变可见了'
-            Assert-True $l2 '没有恢复显示 XkDesk 图标'
+            Assert-True $l2 '没有恢复显示 DeskNext 图标'
             Assert-True $sysHidden2 '恢复后系统 ListView 变可见了'
             '隐藏/显示均正常，系统 ListView 始终隐藏'
         }
@@ -347,9 +347,9 @@ try {
     # ---------------------------------------------------------------- 10 回退：--no-proxy 走进程内菜单
     if (Want '回退') {
         Invoke-Test '--no-proxy 回退到进程内菜单' {
-            Stop-XkDesk | Out-Null; Wait-Ms 1500
+            Stop-DeskNext | Out-Null; Wait-Ms 1500
             $mk = Get-LogMark; $smk = Get-FileMark $Script:ShellLogPath
-            Start-XkDesk -AppArgs @('--no-proxy') | Out-Null; Wait-Ms 2500
+            Start-DeskNext -AppArgs @('--no-proxy') | Out-Null; Wait-Ms 2500
             $r = Capture-Menu 'm-10-fallback-bg' $bp.X $bp.Y
             Assert-True (Has-Text $r.Texts '刷新') "回退菜单不正常：$($r.Texts -join '|')"
             Assert-True (Has-Text $r.Texts '一键整理') '回退菜单缺少自定义项'
@@ -363,7 +363,7 @@ try {
 }
 finally {
     try { Press-Key Escape } catch { }
-    Stop-XkDesk | Out-Null
+    Stop-DeskNext | Out-Null
     Wait-Ms 800
     Clear-TestArtifacts
     Clear-NewFolders

@@ -4,14 +4,14 @@
 $Script:HBackupDir = Join-Path $env:TEMP 'xk-h-backup'
 $Script:RunKeyPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 
-# ---------- 备份/恢复：程序目录 data\ 下所有 json + Run\XkDesk 注册表值 ----------
+# ---------- 备份/恢复：程序目录 data\ 下所有 json + Run\DeskNext 注册表值 ----------
 function Backup-HState {
     if (Test-Path $Script:HBackupDir) { return }  # 上次中断遗留的备份不覆盖
     New-Item -ItemType Directory -Path $Script:HBackupDir | Out-Null
     foreach ($f in Get-ChildItem -LiteralPath $Script:AppDataDir -Filter *.json -ErrorAction SilentlyContinue) {
         Copy-Item $f.FullName (Join-Path $Script:HBackupDir $f.Name) -Force
     }
-    $v = (Get-ItemProperty -Path $Script:RunKeyPath -Name XkDesk -ErrorAction SilentlyContinue).XkDesk
+    $v = (Get-ItemProperty -Path $Script:RunKeyPath -Name DeskNext -ErrorAction SilentlyContinue).DeskNext
     if ($null -ne $v) { Set-Content -Path (Join-Path $Script:HBackupDir 'run.value') -Value $v -Encoding UTF8 }
     else { Set-Content -Path (Join-Path $Script:HBackupDir 'run.missing') -Value '' }
 }
@@ -25,13 +25,13 @@ function Restore-HState {
     }
     if (Test-Path (Join-Path $Script:HBackupDir 'run.value')) {
         $v = (Get-Content (Join-Path $Script:HBackupDir 'run.value') -Raw -Encoding UTF8).TrimEnd("`r", "`n")
-        Set-ItemProperty -Path $Script:RunKeyPath -Name XkDesk -Value $v
+        Set-ItemProperty -Path $Script:RunKeyPath -Name DeskNext -Value $v
     } else {
-        Remove-ItemProperty -Path $Script:RunKeyPath -Name XkDesk -ErrorAction SilentlyContinue
+        Remove-ItemProperty -Path $Script:RunKeyPath -Name DeskNext -ErrorAction SilentlyContinue
     }
     Remove-Item $Script:HBackupDir -Recurse -Force -ErrorAction SilentlyContinue
 }
-function Get-RunValue { return (Get-ItemProperty -Path $Script:RunKeyPath -Name XkDesk -ErrorAction SilentlyContinue).XkDesk }
+function Get-RunValue { return (Get-ItemProperty -Path $Script:RunKeyPath -Name DeskNext -ErrorAction SilentlyContinue).DeskNext }
 
 function Read-Json { param([string]$Name) return (Get-Content (Join-Path $Script:AppDataDir $Name) -Raw -Encoding UTF8 | ConvertFrom-Json) }
 
@@ -42,17 +42,17 @@ function Write-Settings { param([hashtable]$Fields)
 }
 
 # 窗口：按类名/标题找
-function Find-WindowByTitle { param([string]$Title) return [XkTest.Native]::FindWindow($null, $Title) }
+function Find-WindowByTitle { param([string]$Title) return [DnTest.Native]::FindWindow($null, $Title) }
 
 # ---------- 托盘（UI Automation 定位通知区域图标） ----------
-if (-not ('XkTest.Tray' -as [type])) {
+if (-not ('DnTest.Tray' -as [type])) {
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 }
 
 # 返回托盘区（含溢出区）名称包含 Name 的按钮的矩形中心；找不到返回 $null。-Overflow：打开溢出区后再找
 function Find-TrayButton {
-    param([string]$Name = 'xk-desk')
+    param([string]$Name = '桌面整理')
     $root = [System.Windows.Automation.AutomationElement]::RootElement
     $cond = New-Object System.Windows.Automation.PropertyCondition ([System.Windows.Automation.AutomationElement]::ControlTypeProperty), ([System.Windows.Automation.ControlType]::Button)
     foreach ($wcls in 'Shell_TrayWnd', 'NotifyIconOverflowWindow') {
@@ -95,7 +95,7 @@ function Get-UiaCenter {
 function Click-Uia { param($El, [int]$Delay = 300) $c = Get-UiaCenter $El; Click-Mouse $c.X $c.Y -Delay $Delay }
 function Get-WindowRect { param($Win) $r = $Win.Current.BoundingRectangle; return @([int]$r.X, [int]$r.Y, [int]$r.Width, [int]$r.Height) }
 function Close-SettingsWindow {
-    $w = Get-UiaWindow 'xk-desk 设置' 1000
+    $w = Get-UiaWindow '桌面整理设置' 1000
     if ($w) { Click-Uia (Get-UiaById $w 'BtnCancel') 500 }
 }
 
@@ -112,11 +112,11 @@ function Open-TrayOverflow {
     return $false
 }
 
-# 定位 xk-desk 托盘图标（先看任务栏，再开溢出区）；返回 @{X;Y;Window}，找不到返回 $null
+# 定位 桌面整理 托盘图标（先看任务栏，再开溢出区）；返回 @{X;Y;Window}，找不到返回 $null
 function Locate-TrayIcon {
-    $t = Find-TrayButton 'xk-desk'
+    $t = Find-TrayButton '桌面整理'
     if ($t) { return $t }
-    if (Open-TrayOverflow) { $t = Find-TrayButton 'xk-desk' }
+    if (Open-TrayOverflow) { $t = Find-TrayButton '桌面整理' }
     return $t
 }
 function Close-TrayOverflow { Press-Key Escape -Delay 200 }
@@ -124,7 +124,7 @@ function Close-TrayOverflow { Press-Key Escape -Delay 200 }
 # 右键托盘图标，等菜单出现，返回菜单项文本数组
 function Open-TrayMenu {
     $t = Locate-TrayIcon
-    if (-not $t) { throw '找不到 xk-desk 托盘图标' }
+    if (-not $t) { throw '找不到 桌面整理 托盘图标' }
     Click-Mouse $t.X $t.Y -Button Right -Delay 800
     return @(Get-MenuTexts)
 }
@@ -142,7 +142,7 @@ function Wait-Layout2 { param([scriptblock]$Cond, [int]$TimeoutSec = 6) return (
 # 两张截图指定矩形的差异比例
 function Rect-Diff { param([string]$A, [string]$B, [int[]]$Rect) return (Get-ImageDiffRatio -PathA $A -PathB $B -Rect $Rect -Tolerance 10) }
 
-# ---------- 托盘定位：Shell_NotifyIconGetRect（hWnd = XkDesk 消息窗口，uID = 1）----------
+# ---------- 托盘定位：Shell_NotifyIconGetRect（hWnd = DeskNext 消息窗口，uID = 1）----------
 if (-not ('TrayRect' -as [type])) {
 Add-Type -TypeDefinition @'
 using System; using System.Runtime.InteropServices;
@@ -153,7 +153,7 @@ public static class TrayRect {
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr FindWindow(string c, string t);
   // 返回 int[]{L,T,R,B}；失败返回 null
   public static int[] Get() {
-    IntPtr h = FindWindow(null, "XkDeskMessageWindow");
+    IntPtr h = FindWindow(null, "DeskNextMessageWindow");
     if (h == IntPtr.Zero) return null;
     NII n = new NII(); n.cbSize = Marshal.SizeOf(typeof(NII)); n.hWnd = h; n.uID = 1; RECT r;
     if (Shell_NotifyIconGetRect(ref n, out r) < 0) return null;
@@ -181,7 +181,7 @@ function Get-TrayChevronRect {
     return $b.Current.BoundingRectangle
 }
 
-# 定位 xk-desk 托盘图标：图标被折叠在溢出区时，Shell_NotifyIconGetRect 返回折叠按钮的位置，
+# 定位 桌面整理 托盘图标：图标被折叠在溢出区时，Shell_NotifyIconGetRect 返回折叠按钮的位置，
 # 此时先点击折叠按钮展开溢出区，再重新取图标的矩形（返回的点可直接点击）。
 function Locate-TrayIcon {
     $r = [TrayRect]::Get()

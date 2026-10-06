@@ -85,7 +85,7 @@ function Find-Ui { param($Root, [string]$Id)
 function Get-SettingsWindow {
     $deadline = (Get-Date).AddSeconds(5)
     do {
-        $cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'xk-desk 设置')
+        $cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '桌面整理设置')
         $w = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children, $cond)
         if ($w) { return $w }
         Start-Sleep -Milliseconds 200
@@ -101,7 +101,7 @@ $Names = @('xk-test-a.txt', 'xk-test-b.docx', 'xk-test-c.png', 'xk-test-d.mp4', 
 $DirName = 'xk-test-dir'
 $PreShot = Join-Path $Script:OutDir 'c-00-pre.png'
 
-Stop-XkDesk | Out-Null
+Stop-DeskNext | Out-Null
 Backup-All
 Remove-Item (Join-Path $AppDir 'settings.json'), (Join-Path $AppDir 'organize-undo.json') -Force -ErrorAction SilentlyContinue
 Clear-TestArtifacts
@@ -112,14 +112,14 @@ New-TestFile -Name $DirName -Directory | Out-Null
 Wait-Ms 1000
 
 try {
-    Start-XkDesk | Out-Null; Wait-Ms 1800; Wait-Saved
+    Start-DeskNext | Out-Null; Wait-Ms 1800; Wait-Saved
     $boxCount0 = @((Read-Layout).Boxes).Count
     Save-Screen -Name c-01-before | Out-Null
 
     Invoke-Test 'C01 整理前：撤销整理置灰、一键整理可用' {
         $p = Find-BlankCell
         Click-Mouse $p.X $p.Y -Button Right; Wait-Ms 700
-        $o = Find-MenuItem '一键整理' -Exact; $x = Find-MenuItem 'xk-desk' -Exact; Assert-True ($null -ne $x) '菜单里没有 xk-desk 子菜单'; Click-Mouse $x.X $x.Y -Delay 600; $u = Find-MenuItem '撤销整理'
+        $o = Find-MenuItem '一键整理' -Exact; $x = Find-MenuItem '桌面整理' -Exact; Assert-True ($null -ne $x) '菜单里没有 桌面整理 子菜单'; Click-Mouse $x.X $x.Y -Delay 600; $u = Find-MenuItem '撤销整理'
         Save-Screen -Name c-01-menu-initial | Out-Null
         Press-Key Escape; Press-Key Escape
         Assert-True ($o -and $u) '菜单里没有一键整理/撤销整理'
@@ -163,7 +163,7 @@ try {
     }
 
     Invoke-Test 'C03 撤销整理：布局恢复（格子消失、图标回自由区）' {
-        Right-ClickBlank @('xk-desk ▸ 撤销整理'); Wait-Ms 1200; Wait-Saved
+        Right-ClickBlank @('桌面整理 ▸ 撤销整理'); Wait-Ms 1200; Wait-Saved
         Move-Mouse ($Screen.Width - 5) ($Screen.Height - 5) 300
         Save-Screen -Name c-03-undone | Out-Null
         $l = Read-Layout
@@ -178,18 +178,18 @@ try {
     Invoke-Test 'C04 再整理 → 重启程序 → 撤销整理仍可用' {
         Right-ClickBlank @('一键整理'); Wait-Ms 1500; Wait-Saved
         Assert-True (Test-Path (Join-Path $AppDir 'organize-undo.json')) '没有写出 organize-undo.json'
-        Stop-XkDesk | Out-Null; Wait-Ms 1500
-        Start-XkDesk | Out-Null; Wait-Ms 2000
+        Stop-DeskNext | Out-Null; Wait-Ms 1500
+        Start-DeskNext | Out-Null; Wait-Ms 2000
         Save-Screen -Name c-04-restarted | Out-Null
         $p = Find-BlankCell
         Click-Mouse $p.X $p.Y -Button Right; Wait-Ms 700
-        $x = Find-MenuItem 'xk-desk' -Exact; Assert-True ($null -ne $x) '菜单里没有 xk-desk 子菜单'
+        $x = Find-MenuItem '桌面整理' -Exact; Assert-True ($null -ne $x) '菜单里没有 桌面整理 子菜单'
         Click-Mouse $x.X $x.Y -Delay 600
         $u = Find-MenuItem '撤销整理'
         Save-Screen -Name c-04-menu-after-restart | Out-Null
         Press-Key Escape; Press-Key Escape
         Assert-True ($u -and (($u.State -band 3) -eq 0)) "重启后撤销整理应可用，State=$($u.State)"
-        Right-ClickBlank @('xk-desk ▸ 撤销整理'); Wait-Ms 1200; Wait-Saved
+        Right-ClickBlank @('桌面整理 ▸ 撤销整理'); Wait-Ms 1200; Wait-Saved
         $l = Read-Layout
         Assert-True (@($l.Boxes).Count -eq $boxCount0) "撤销后格子数应为 $boxCount0，实际 $(@($l.Boxes).Count)"
         foreach ($n in ($Names + $DirName)) { Assert-True (Test-Free $n) "$n 没回到自由区" }
@@ -198,7 +198,7 @@ try {
     }
 
     Invoke-Test 'C05 设置窗口：打开、改规则（去掉 txt）、保存，整理结果随之变化' {
-        Right-ClickBlank @('xk-desk ▸ xk-desk 设置')
+        Right-ClickBlank @('桌面整理 ▸ 设置')
         $w = Get-SettingsWindow
         Assert-True ($w -ne $null) '设置窗口没打开'
         Wait-Ms 800
@@ -231,7 +231,7 @@ try {
     }
 
     Invoke-Test 'C06 设置窗口：恢复默认、上下移动（不保存）' {
-        Right-ClickBlank @('xk-desk ▸ xk-desk 设置')
+        Right-ClickBlank @('桌面整理 ▸ 设置')
         $w = Get-SettingsWindow
         Assert-True ($w -ne $null) '设置窗口没打开'
         Wait-Ms 600
@@ -250,11 +250,11 @@ try {
     }
 
     # 收尾前撤销最近一次整理（让布局回到整理前，便于肉眼核对）
-    try { Right-ClickBlank @('xk-desk ▸ 撤销整理'); Wait-Ms 1200; Wait-Saved } catch { }
+    try { Right-ClickBlank @('桌面整理 ▸ 撤销整理'); Wait-Ms 1200; Wait-Saved } catch { }
 }
 finally {
     try { Press-Key Escape } catch { }
-    Stop-XkDesk | Out-Null
+    Stop-DeskNext | Out-Null
     Wait-Ms 800
     Clear-TestArtifacts
     Restore-AllJson

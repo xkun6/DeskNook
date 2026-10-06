@@ -7,8 +7,8 @@ $Rect = @(1000, 300, 1500, 1000)
 $Shot1 = Join-Path $Script:OutDir 'b-c01-before-restart.png'
 try {
     Invoke-Test 'C01 搭建布局：两个普通格子（一个折叠、一个锁定+按修改时间排序）+ 一个映射格子' {
-        Click-ContextMenu 1100 400 -Path @('xk-desk ▸ 新建格子')
-        Click-ContextMenu 1500 400 -Path @('xk-desk ▸ 新建格子')
+        Click-ContextMenu 1100 400 -Path @('桌面整理 ▸ 新建格子')
+        Click-ContextMenu 1500 400 -Path @('桌面整理 ▸ 新建格子')
         Assert-True (Wait-Layout { param($l) @($l.Boxes).Count -eq 2 }) '没有 2 个格子'
         Wait-Saved
         $b1 = (Get-Boxes)[0]; $b2 = (Get-Boxes)[1]
@@ -23,7 +23,7 @@ try {
         Type-Text '工作区'; Press-Key Enter; Wait-Ms 500
         Click-ContextMenu ([int]($b2.Rect.X + 150)) ([int]($b2.Rect.Y + 16)) -Path @('排序方式', '修改时间')
         Click-ContextMenu ([int]($b2.Rect.X + 150)) ([int]($b2.Rect.Y + 16)) -Path @('锁定')
-        Click-ContextMenu 1900 800 -Path @('xk-desk ▸ 新建映射格子')
+        Click-ContextMenu 1900 800 -Path @('桌面整理 ▸ 新建映射格子')
         Wait-Ms 1500; Type-Text $Script:MapDir; Wait-Ms 300; Press-Key Enter; Wait-Ms 1500
         if (-not (Wait-Layout { param($l) @($l.Boxes).Count -ge 3 } -TimeoutSec 3)) { Press-Key Enter; Wait-Ms 1000 }
         Assert-True (Wait-Layout { param($l) @($l.Boxes).Count -eq 3 } -TimeoutSec 5) '没有 3 个格子'
@@ -39,8 +39,8 @@ try {
 
     Invoke-Test 'C02 重启程序后布局完全还原（截图对比 + 布局 JSON 对比）' {
         $jsonBefore = (Get-Content $Script:LayoutPath -Raw -Encoding UTF8 | ConvertFrom-Json).Boxes | ConvertTo-Json -Depth 6
-        Stop-XkDesk | Out-Null; Wait-Ms 1500
-        Start-XkDesk | Out-Null; Wait-Ms 2500
+        Stop-DeskNext | Out-Null; Wait-Ms 1500
+        Start-DeskNext | Out-Null; Wait-Ms 2500
         Move-Mouse 2400 1300 300; Wait-Ms 800
         Save-Screen -Name b-c02-after-restart -Rect $Rect | Out-Null
         Wait-Saved

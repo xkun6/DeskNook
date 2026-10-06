@@ -46,13 +46,13 @@ function Get-BoxIconCenter {
     return @{ X = [int]($Box.Rect.X + $c * $Script:CW + 37); Y = [int]($Box.Rect.Y + $Script:TitleH + $r * $Script:CH + 28) }
 }
 
-if (-not ('XkTest.MenuApi' -as [type])) {
+if (-not ('DnTest.MenuApi' -as [type])) {
 Add-Type -TypeDefinition @'
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
-namespace XkTest {
+namespace DnTest {
   public static class MenuApi {
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr l);
@@ -95,7 +95,7 @@ function Find-MenuItem {
     $deadline = (Get-Date).AddMilliseconds($TimeoutMs)
     do {
         $exactHit = $null; $likeHit = $null
-        foreach ($line in [XkTest.MenuApi]::Items()) {
+        foreach ($line in [DnTest.MenuApi]::Items()) {
             $p = $line.Split('|')
             $name = ($p[0] -replace '\(&.\)|&', '').Trim()
             if (-not $name -or [int]$p[3] -le 0) { continue }
@@ -111,10 +111,10 @@ function Find-MenuItem {
 }
 
 # 当前所有弹出菜单项文本（调试/断言用）
-function Get-MenuTexts { return @([XkTest.MenuApi]::Items() | ForEach-Object { ($_.Split('|')[0] -replace '\(&.\)|&', '').Trim() }) }
+function Get-MenuTexts { return @([DnTest.MenuApi]::Items() | ForEach-Object { ($_.Split('|')[0] -replace '\(&.\)|&', '').Trim() }) }
 
-# 路径式菜单选择：Path 为数组（@('xk-desk','新建格子')）或用 ▸ 分隔的字符串（'xk-desk ▸ 新建格子'）；
-# 在已弹出的菜单里依次点击各级（父级点击即展开子菜单）。统一入口，适用于 explorer.exe 弹出的菜单和 XkDesk 自己弹出的菜单。
+# 路径式菜单选择：Path 为数组（@('桌面整理','新建格子')）或用 ▸ 分隔的字符串（'桌面整理 ▸ 新建格子'）；
+# 在已弹出的菜单里依次点击各级（父级点击即展开子菜单）。统一入口，适用于 explorer.exe 弹出的菜单和 DeskNext 自己弹出的菜单。
 function Split-MenuPath {
     param([Parameter(Mandatory)][string[]]$Path)
     return @($Path | ForEach-Object { $_ -split '\s*▸\s*' } | Where-Object { $_ -ne '' })
@@ -143,11 +143,11 @@ function Clear-TestArtifacts {
     if (Test-Path $Script:MapDir) { Remove-Item $Script:MapDir -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
-if (-not ('XkTest.Wheel' -as [type])) {
+if (-not ('DnTest.Wheel' -as [type])) {
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
-namespace XkTest {
+namespace DnTest {
   public static class Wheel {
     [DllImport("user32.dll")] static extern void mouse_event(uint flags, int dx, int dy, int data, UIntPtr extra);
     public static void Scroll(int delta) { mouse_event(0x0800, 0, 0, delta, UIntPtr.Zero); }
@@ -160,39 +160,39 @@ namespace XkTest {
 function Scroll-Wheel {
     param([int]$X, [int]$Y, [int]$Delta, [int]$Delay = 400)
     Move-Mouse $X $Y 120
-    [XkTest.Wheel]::Scroll($Delta); Wait-Ms $Delay
+    [DnTest.Wheel]::Scroll($Delta); Wait-Ms $Delay
 }
 
 # 拖动过程中截图：按下 → 逐步移动到目标 → 截图（保持按下）→ 释放
 function Drag-Mouse-Shot {
     param([int]$X1, [int]$Y1, [int]$X2, [int]$Y2, [string]$ShotName, [int[]]$ShotRect, [int]$Steps = 20)
     Move-Mouse $X1 $Y1 100
-    [XkTest.Native]::Mouse(0x2); Wait-Ms 80
+    [DnTest.Native]::Mouse(0x2); Wait-Ms 80
     for ($i = 1; $i -le $Steps; $i++) {
-        [void][XkTest.Native]::SetCursorPos([int]($X1 + ($X2 - $X1) * $i / $Steps), [int]($Y1 + ($Y2 - $Y1) * $i / $Steps))
+        [void][DnTest.Native]::SetCursorPos([int]($X1 + ($X2 - $X1) * $i / $Steps), [int]($Y1 + ($Y2 - $Y1) * $i / $Steps))
         Wait-Ms 15
     }
     Wait-Ms 300
     if ($ShotRect) { Save-Screen -Name $ShotName -Rect $ShotRect | Out-Null } else { Save-Screen -Name $ShotName | Out-Null }
-    [XkTest.Native]::Mouse(0x4); Wait-Ms 500
+    [DnTest.Native]::Mouse(0x4); Wait-Ms 500
 }
 
 # ---------- 测试生命周期 ----------
 function Start-BoxTest {
     param([string[]]$Files = @('a', 'b', 'c'), [switch]$NoStart)
-    Stop-XkDesk | Out-Null
+    Stop-DeskNext | Out-Null
     Backup-Layout
     Remove-Item $Script:LayoutPath -Force -ErrorAction SilentlyContinue   # 从空布局开始（原布局已备份，结束时还原）
     Clear-TestArtifacts
     foreach ($f in $Files) { New-TestFile -Name "xk-test-$f.txt" -Content "xk-test $f" | Out-Null }
     Wait-Ms 1000
     Minimize-All
-    if (-not $NoStart) { Start-XkDesk | Out-Null; Wait-Ms 1500; Wait-Saved }
+    if (-not $NoStart) { Start-DeskNext | Out-Null; Wait-Ms 1500; Wait-Saved }
 }
 
 function Finish-BoxTest {
     try { Press-Key Escape } catch { }
-    Stop-XkDesk | Out-Null
+    Stop-DeskNext | Out-Null
     Wait-Ms 800
     Clear-TestArtifacts
     Restore-Layout

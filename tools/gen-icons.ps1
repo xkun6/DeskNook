@@ -1,7 +1,7 @@
-﻿# 生成应用图标与菜单线条图标（多尺寸 ICO，PNG 帧）。输出到 src/XkDesk/Assets/。
+﻿# 生成应用图标与菜单线条图标（多尺寸 ICO，PNG 帧）。输出到 src/DeskNext/Assets/。
 # 用法：powershell -NoProfile -ExecutionPolicy Bypass -File tools/gen-icons.ps1
 Add-Type -AssemblyName System.Drawing
-$out = Join-Path $PSScriptRoot '..\src\XkDesk\Assets'
+$out = Join-Path $PSScriptRoot '..\src\DeskNext\Assets'
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 $out = (Resolve-Path $out).Path
 

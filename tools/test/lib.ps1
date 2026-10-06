@@ -1,16 +1,16 @@
-﻿# xk-desk 自动化测试库（PowerShell 5.1）。用法：. $PSScriptRoot\lib.ps1
+﻿# 桌面整理 自动化测试库（PowerShell 5.1）。用法：. $PSScriptRoot\lib.ps1
 # 注意：测试文件只允许 xk-test- 前缀，绝不触碰用户已有桌面文件。
 $ErrorActionPreference = 'Stop'
 
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
 
-if (-not ('XkTest.Native' -as [type])) {
+if (-not ('DnTest.Native' -as [type])) {
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
-namespace XkTest {
+namespace DnTest {
   public static class Native {
     [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr v);
     [DllImport("user32.dll")] public static extern int GetSystemMetrics(int i);
@@ -73,23 +73,23 @@ namespace XkTest {
 }
 
 # 进程 DPI 感知：PerMonitorV2（-4），坐标一律为物理像素
-[void][XkTest.Native]::SetProcessDpiAwarenessContext([IntPtr](-4))
+[void][DnTest.Native]::SetProcessDpiAwarenessContext([IntPtr](-4))
 
 # ---------- 路径 ----------
 $Script:TestRoot = $PSScriptRoot
 $Script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $Script:OutDir   = Join-Path $PSScriptRoot 'out'
 if (-not (Test-Path $Script:OutDir)) { New-Item -ItemType Directory -Path $Script:OutDir | Out-Null }
-$Script:ExePath  = Join-Path $Script:RepoRoot 'src\XkDesk\bin\Release\net9.0-windows\XkDesk.exe'
+$Script:ExePath  = Join-Path $Script:RepoRoot 'src\DeskNext\bin\Release\net9.0-windows\DeskNext.exe'
 $Script:DataDir  = Join-Path (Split-Path $Script:ExePath -Parent) 'data'   # 数据一律在程序目录下的 data
-$Script:LogPath  = Join-Path $Script:DataDir 'logs\xkdesk.log'
+$Script:LogPath  = Join-Path $Script:DataDir 'logs\desknext.log'
 $Script:DesktopDir = [Environment]::GetFolderPath('Desktop')
 $Script:Results  = New-Object System.Collections.ArrayList
 
 # 虚拟屏幕 @(x,y,w,h)
 function Get-VirtualScreen {
-    $x = [XkTest.Native]::GetSystemMetrics(76); $y = [XkTest.Native]::GetSystemMetrics(77)
-    $w = [XkTest.Native]::GetSystemMetrics(78); $h = [XkTest.Native]::GetSystemMetrics(79)
+    $x = [DnTest.Native]::GetSystemMetrics(76); $y = [DnTest.Native]::GetSystemMetrics(77)
+    $w = [DnTest.Native]::GetSystemMetrics(78); $h = [DnTest.Native]::GetSystemMetrics(79)
     return @($x, $y, $w, $h)
 }
 
@@ -155,7 +155,7 @@ $Script:MOUSE = @{ LeftDown = 0x2; LeftUp = 0x4; RightDown = 0x8; RightUp = 0x10
 
 function Move-Mouse {
     param([Parameter(Mandatory)][int]$X, [Parameter(Mandatory)][int]$Y, [int]$Delay = 120)
-    [void][XkTest.Native]::SetCursorPos($X, $Y)
+    [void][DnTest.Native]::SetCursorPos($X, $Y)
     Wait-Ms $Delay
 }
 
@@ -178,12 +178,12 @@ function Click-Mouse {
     param([Parameter(Mandatory)][int]$X, [Parameter(Mandatory)][int]$Y,
           [ValidateSet('Left','Right')][string]$Button = 'Left', [switch]$Ctrl, [switch]$Shift, [int]$Delay = 150)
     Move-Mouse $X $Y 80
-    if ($Ctrl)  { [XkTest.Native]::Key(0x11, 0, 0) }
-    if ($Shift) { [XkTest.Native]::Key(0x10, 0, 0) }
-    [XkTest.Native]::Mouse([uint32]$Script:MOUSE[$Button + 'Down']); Wait-Ms 40
-    [XkTest.Native]::Mouse([uint32]$Script:MOUSE[$Button + 'Up'])
-    if ($Shift) { [XkTest.Native]::Key(0x10, 0, 2) }
-    if ($Ctrl)  { [XkTest.Native]::Key(0x11, 0, 2) }
+    if ($Ctrl)  { [DnTest.Native]::Key(0x11, 0, 0) }
+    if ($Shift) { [DnTest.Native]::Key(0x10, 0, 0) }
+    [DnTest.Native]::Mouse([uint32]$Script:MOUSE[$Button + 'Down']); Wait-Ms 40
+    [DnTest.Native]::Mouse([uint32]$Script:MOUSE[$Button + 'Up'])
+    if ($Shift) { [DnTest.Native]::Key(0x10, 0, 2) }
+    if ($Ctrl)  { [DnTest.Native]::Key(0x11, 0, 2) }
     Wait-Ms $Delay
 }
 
@@ -191,8 +191,8 @@ function DoubleClick-Mouse {
     param([Parameter(Mandatory)][int]$X, [Parameter(Mandatory)][int]$Y, [int]$Delay = 200)
     Move-Mouse $X $Y 80
     for ($i = 0; $i -lt 2; $i++) {
-        [XkTest.Native]::Mouse(0x2); Wait-Ms 30
-        [XkTest.Native]::Mouse(0x4); Wait-Ms 60
+        [DnTest.Native]::Mouse(0x2); Wait-Ms 30
+        [DnTest.Native]::Mouse(0x4); Wait-Ms 60
     }
     Wait-Ms $Delay
 }
@@ -201,13 +201,13 @@ function Drag-Mouse {
     param([Parameter(Mandatory)][int]$X1, [Parameter(Mandatory)][int]$Y1, [Parameter(Mandatory)][int]$X2, [Parameter(Mandatory)][int]$Y2,
           [int]$Steps = 20, [ValidateSet('Left','Right')][string]$Button = 'Left', [int]$StepDelay = 15, [int]$Delay = 200)
     Move-Mouse $X1 $Y1 100
-    [XkTest.Native]::Mouse([uint32]$Script:MOUSE[$Button + 'Down']); Wait-Ms 80
+    [DnTest.Native]::Mouse([uint32]$Script:MOUSE[$Button + 'Down']); Wait-Ms 80
     for ($i = 1; $i -le $Steps; $i++) {
-        [void][XkTest.Native]::SetCursorPos([int]($X1 + ($X2 - $X1) * $i / $Steps), [int]($Y1 + ($Y2 - $Y1) * $i / $Steps))
+        [void][DnTest.Native]::SetCursorPos([int]($X1 + ($X2 - $X1) * $i / $Steps), [int]($Y1 + ($Y2 - $Y1) * $i / $Steps))
         Wait-Ms $StepDelay
     }
     Wait-Ms 120
-    [XkTest.Native]::Mouse([uint32]$Script:MOUSE[$Button + 'Up'])
+    [DnTest.Native]::Mouse([uint32]$Script:MOUSE[$Button + 'Up'])
     Wait-Ms $Delay
 }
 
@@ -215,14 +215,14 @@ function Drag-Mouse {
 function Press-Key {
     param([Parameter(Mandatory)]$Key, [switch]$Ctrl, [switch]$Shift, [switch]$Alt, [int]$Delay = 150)
     $vk = Get-VkCode $Key
-    if ($Ctrl)  { [XkTest.Native]::Key(0x11, 0, 0) }
-    if ($Shift) { [XkTest.Native]::Key(0x10, 0, 0) }
-    if ($Alt)   { [XkTest.Native]::Key(0x12, 0, 0) }
-    [XkTest.Native]::Key($vk, 0, 0); Wait-Ms 30
-    [XkTest.Native]::Key($vk, 0, 2)
-    if ($Alt)   { [XkTest.Native]::Key(0x12, 0, 2) }
-    if ($Shift) { [XkTest.Native]::Key(0x10, 0, 2) }
-    if ($Ctrl)  { [XkTest.Native]::Key(0x11, 0, 2) }
+    if ($Ctrl)  { [DnTest.Native]::Key(0x11, 0, 0) }
+    if ($Shift) { [DnTest.Native]::Key(0x10, 0, 0) }
+    if ($Alt)   { [DnTest.Native]::Key(0x12, 0, 0) }
+    [DnTest.Native]::Key($vk, 0, 0); Wait-Ms 30
+    [DnTest.Native]::Key($vk, 0, 2)
+    if ($Alt)   { [DnTest.Native]::Key(0x12, 0, 2) }
+    if ($Shift) { [DnTest.Native]::Key(0x10, 0, 2) }
+    if ($Ctrl)  { [DnTest.Native]::Key(0x11, 0, 2) }
     Wait-Ms $Delay
 }
 Set-Alias Send-Keys Press-Key
@@ -231,8 +231,8 @@ Set-Alias Send-Keys Press-Key
 function Type-Text {
     param([Parameter(Mandatory)][string]$Text, [int]$Delay = 150)
     foreach ($c in $Text.ToCharArray()) {
-        [XkTest.Native]::Key(0, [uint16][char]$c, 4)
-        [XkTest.Native]::Key(0, [uint16][char]$c, 6)
+        [DnTest.Native]::Key(0, [uint16][char]$c, 4)
+        [DnTest.Native]::Key(0, [uint16][char]$c, 6)
         Wait-Ms 20
     }
     Wait-Ms $Delay
@@ -240,17 +240,17 @@ function Type-Text {
 
 function Send-WinD {
     param([int]$Delay = 800)
-    [XkTest.Native]::keybd_event(0x5B, 0, 0, [UIntPtr]::Zero)
-    [XkTest.Native]::keybd_event(0x44, 0, 0, [UIntPtr]::Zero)
-    [XkTest.Native]::keybd_event(0x44, 0, 2, [UIntPtr]::Zero)
-    [XkTest.Native]::keybd_event(0x5B, 0, 2, [UIntPtr]::Zero)
+    [DnTest.Native]::keybd_event(0x5B, 0, 0, [UIntPtr]::Zero)
+    [DnTest.Native]::keybd_event(0x44, 0, 0, [UIntPtr]::Zero)
+    [DnTest.Native]::keybd_event(0x44, 0, 2, [UIntPtr]::Zero)
+    [DnTest.Native]::keybd_event(0x5B, 0, 2, [UIntPtr]::Zero)
     Wait-Ms $Delay
 }
 
 # ---------- 窗口 ----------
 function Minimize-All { (New-Object -ComObject Shell.Application).MinimizeAll(); Wait-Ms 1200 }
 function Restore-All  { (New-Object -ComObject Shell.Application).UndoMinimizeALL(); Wait-Ms 800 }
-function Get-ForegroundTitle { return [XkTest.Native]::FgTitle() }
+function Get-ForegroundTitle { return [DnTest.Native]::FgTitle() }
 function Stop-ProcessByName {
     param([Parameter(Mandatory)][string]$Name)
     Get-Process -Name $Name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
@@ -301,7 +301,7 @@ function Wait-Log {
 
 # ---------- 应用生命周期 ----------
 # 返回启动前的日志行数（可作为 Wait-Log 的 Since）
-function Start-XkDesk {
+function Start-DeskNext {
     param([string[]]$AppArgs = @(), [int]$TimeoutSec = 20)
     if (-not (Test-Path $Script:ExePath)) { throw "找不到 $Script:ExePath，请先 dotnet build -c Release" }
     $mark = Get-LogMark
@@ -313,17 +313,17 @@ function Start-XkDesk {
     return $mark
 }
 
-function Stop-XkDesk {
+function Stop-DeskNext {
     param([int]$TimeoutSec = 10)
-    if (-not (Get-Process -Name XkDesk -ErrorAction SilentlyContinue)) { return $true }
+    if (-not (Get-Process -Name DeskNext -ErrorAction SilentlyContinue)) { return $true }
     if (Test-Path $Script:ExePath) { Start-Process -FilePath $Script:ExePath -ArgumentList '--exit' | Out-Null }
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
-    while ((Get-Date) -lt $deadline -and (Get-Process -Name XkDesk -ErrorAction SilentlyContinue)) { Start-Sleep -Milliseconds 200 }
-    if (Get-Process -Name XkDesk -ErrorAction SilentlyContinue) {
-        Write-Warning 'XkDesk 未响应 --exit，强制结束并兜底恢复系统图标'
-        Stop-ProcessByName XkDesk
+    while ((Get-Date) -lt $deadline -and (Get-Process -Name DeskNext -ErrorAction SilentlyContinue)) { Start-Sleep -Milliseconds 200 }
+    if (Get-Process -Name DeskNext -ErrorAction SilentlyContinue) {
+        Write-Warning 'DeskNext 未响应 --exit，强制结束并兜底恢复系统图标'
+        Stop-ProcessByName DeskNext
         Start-Sleep -Milliseconds 300
-        [void][XkTest.Native]::ShowSystemIcons()
+        [void][DnTest.Native]::ShowSystemIcons()
         return $false
     }
     return $true
