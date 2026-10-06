@@ -1,0 +1,24 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <!-- 安装包版本：由 tools/build-installer.ps1 从 DeskNook.exe 读取后传入；单独 dotnet build 时用默认值（仅影响文件名） -->
+  <PropertyGroup>
+    <ProductVersion Condition="'$(ProductVersion)' == ''">1.0.0</ProductVersion>
+    <!-- AppPublishDir：self-contained 发布目录（可用 -p:AppPublishDir= 覆盖），规范化为带结尾反斜杠的绝对路径 -->
+    <AppPublishDir Condition="'$(AppPublishDir)' == ''">$(MSBuildThisFileDirectory)..\artifacts\publish</AppPublishDir>
+    <PublishDir>$([MSBuild]::NormalizeDirectory('$(AppPublishDir)'))</PublishDir>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <OutputName>DeskNook-$(ProductVersion)-x64</OutputName>
+    <OutputPath>$(MSBuildThisFileDirectory)..\artifacts\</OutputPath>
+    <!-- ICE38/43/57：快捷方式放在 ProgramMenuFolder/DesktopFolder（per-machine 下解析为 All Users 目录），
+         ICE 仍按“用户配置文件目录”要求 HKCU 键值，属于已知误报；组件键值用 HKLM 与 per-machine 安装保持一致 -->
+    <SuppressIces>ICE38;ICE43;ICE57</SuppressIces>
+    <Cultures>zh-CN</Cultures>
+    <DefineConstants>$(DefineConstants);PublishDir=$(PublishDir)</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="5.0.2" />
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+  </ItemGroup>
+
+</Project>

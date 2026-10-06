@@ -4,14 +4,14 @@
 $Script:HBackupDir = Join-Path $env:TEMP 'xk-h-backup'
 $Script:RunKeyPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 
-# ---------- 备份/恢复：程序目录 data\ 下所有 json + Run\DeskNext 注册表值 ----------
+# ---------- 备份/恢复：程序目录 data\ 下所有 json + Run\DeskNook 注册表值 ----------
 function Backup-HState {
     if (Test-Path $Script:HBackupDir) { return }  # 上次中断遗留的备份不覆盖
     New-Item -ItemType Directory -Path $Script:HBackupDir | Out-Null
     foreach ($f in Get-ChildItem -LiteralPath $Script:AppDataDir -Filter *.json -ErrorAction SilentlyContinue) {
         Copy-Item $f.FullName (Join-Path $Script:HBackupDir $f.Name) -Force
     }
-    $v = (Get-ItemProperty -Path $Script:RunKeyPath -Name DeskNext -ErrorAction SilentlyContinue).DeskNext
+    $v = (Get-ItemProperty -Path $Script:RunKeyPath -Name DeskNook -ErrorAction SilentlyContinue).DeskNook
     if ($null -ne $v) { Set-Content -Path (Join-Path $Script:HBackupDir 'run.value') -Value $v -Encoding UTF8 }
     else { Set-Content -Path (Join-Path $Script:HBackupDir 'run.missing') -Value '' }
 }
@@ -25,13 +25,13 @@ function Restore-HState {
     }
     if (Test-Path (Join-Path $Script:HBackupDir 'run.value')) {
         $v = (Get-Content (Join-Path $Script:HBackupDir 'run.value') -Raw -Encoding UTF8).TrimEnd("`r", "`n")
-        Set-ItemProperty -Path $Script:RunKeyPath -Name DeskNext -Value $v
+        Set-ItemProperty -Path $Script:RunKeyPath -Name DeskNook -Value $v
     } else {
-        Remove-ItemProperty -Path $Script:RunKeyPath -Name DeskNext -ErrorAction SilentlyContinue
+        Remove-ItemProperty -Path $Script:RunKeyPath -Name DeskNook -ErrorAction SilentlyContinue
     }
     Remove-Item $Script:HBackupDir -Recurse -Force -ErrorAction SilentlyContinue
 }
-function Get-RunValue { return (Get-ItemProperty -Path $Script:RunKeyPath -Name DeskNext -ErrorAction SilentlyContinue).DeskNext }
+function Get-RunValue { return (Get-ItemProperty -Path $Script:RunKeyPath -Name DeskNook -ErrorAction SilentlyContinue).DeskNook }
 
 function Read-Json { param([string]$Name) return (Get-Content (Join-Path $Script:AppDataDir $Name) -Raw -Encoding UTF8 | ConvertFrom-Json) }
 
@@ -142,7 +142,7 @@ function Wait-Layout2 { param([scriptblock]$Cond, [int]$TimeoutSec = 6) return (
 # 两张截图指定矩形的差异比例
 function Rect-Diff { param([string]$A, [string]$B, [int[]]$Rect) return (Get-ImageDiffRatio -PathA $A -PathB $B -Rect $Rect -Tolerance 10) }
 
-# ---------- 托盘定位：Shell_NotifyIconGetRect（hWnd = DeskNext 消息窗口，uID = 1）----------
+# ---------- 托盘定位：Shell_NotifyIconGetRect（hWnd = DeskNook 消息窗口，uID = 1）----------
 if (-not ('TrayRect' -as [type])) {
 Add-Type -TypeDefinition @'
 using System; using System.Runtime.InteropServices;
@@ -153,7 +153,7 @@ public static class TrayRect {
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr FindWindow(string c, string t);
   // 返回 int[]{L,T,R,B}；失败返回 null
   public static int[] Get() {
-    IntPtr h = FindWindow(null, "DeskNextMessageWindow");
+    IntPtr h = FindWindow(null, "DeskNookMessageWindow");
     if (h == IntPtr.Zero) return null;
     NII n = new NII(); n.cbSize = Marshal.SizeOf(typeof(NII)); n.hWnd = h; n.uID = 1; RECT r;
     if (Shell_NotifyIconGetRect(ref n, out r) < 0) return null;

@@ -15,12 +15,12 @@ function Has-Text { param($Texts, [string]$Pat) return @($Texts | Where-Object {
 function Shot { param([string]$Name) return (Save-Screen -Name $Name) }
 
 Backup-HState
-Stop-DeskNext | Out-Null
+Stop-DeskNook | Out-Null
 Clear-TestArtifacts
 Clear-NewFolders
 Remove-Item $Script:FlagPath -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $Script:AppDataDir 'settings.json') -Force -ErrorAction SilentlyContinue
-Remove-ItemProperty -Path $Script:RunKeyPath -Name DeskNext -ErrorAction SilentlyContinue
+Remove-ItemProperty -Path $Script:RunKeyPath -Name DeskNook -ErrorAction SilentlyContinue
 foreach ($f in 'a', 'b', 'c') { New-TestFile -Name "xk-test-$f.txt" -Content "xk-test $f" | Out-Null }
 Wait-Ms 800
 Minimize-All
@@ -32,9 +32,9 @@ try {
         Remove-Item (Join-Path $Script:AppDataDir 'layout.json') -Force -ErrorAction SilentlyContinue
         $Script:ExplorerPids = Get-ExplorerPids
         $mk = Get-LogMark
-        $shellDlls = @(Get-ChildItem (Join-Path $Script:DataDir 'shellext') -Filter 'DeskNextShellExt.*.dll' -ErrorAction SilentlyContinue | ForEach-Object Name)
+        $shellDlls = @(Get-ChildItem (Join-Path $Script:DataDir 'shellext') -Filter 'DeskNookShellExt.*.dll' -ErrorAction SilentlyContinue | ForEach-Object Name)
         Write-Host "启动前已有的 DLL 副本：$($shellDlls -join ', ')"
-        Start-DeskNext | Out-Null
+        Start-DeskNook | Out-Null
         Invoke-Test '版本检测：旧版组件（Explorer 内）→ 日志警告 + 托盘气泡' {
             $l = Wait-Log -Pattern '菜单组件版本一致|警告：Explorer 内的菜单组件是旧版' -Since $mk -TimeoutSec 20
             Assert-True $l '日志里没有版本检测结果'
@@ -43,7 +43,7 @@ try {
             "$l"
         }
         Wait-Ms 4000
-        Stop-DeskNext | Out-Null
+        Stop-DeskNook | Out-Null
         Wait-Ms 1500
         Assert-ExplorerAlive
     }
@@ -54,23 +54,23 @@ try {
     Write-Host "Explorer PID：$($Script:ExplorerPids -join ',')"
     Minimize-All
     Remove-Item (Join-Path $Script:AppDataDir 'layout.json') -Force -ErrorAction SilentlyContinue
-    Start-DeskNext | Out-Null; Wait-Ms 2500; Wait-Saved; Stop-DeskNext | Out-Null; Wait-Ms 2000
+    Start-DeskNook | Out-Null; Wait-Ms 2500; Wait-Saved; Stop-DeskNook | Out-Null; Wait-Ms 2000
 
     if (Want '版本二') {
         $mk = Get-LogMark
-        Start-DeskNext | Out-Null
+        Start-DeskNook | Out-Null
         Invoke-Test '版本检测：重启 Explorer 后版本一致，不提示' {
             $l = Wait-Log -Pattern '菜单组件版本一致|警告：Explorer 内的菜单组件是旧版' -Since $mk -TimeoutSec 20
             Assert-True ($l -and $l -match '版本一致') "期望版本一致，实际：$l"
             Assert-True (-not (Wait-Log -Pattern '托盘气泡' -Since $mk -TimeoutSec 2)) '版本一致时不应弹气泡'
             $l
         }
-        Stop-DeskNext | Out-Null; Wait-Ms 1500
+        Stop-DeskNook | Out-Null; Wait-Ms 1500
     }
 
     if (Want '版本三') {
         $mk = Get-LogMark
-        Start-DeskNext -AppArgs @('--simulate-outdated-proxy') | Out-Null
+        Start-DeskNook -AppArgs @('--simulate-outdated-proxy') | Out-Null
         Invoke-Test '版本检测（模拟旧版）：日志警告 + 托盘气泡' {
             $l = Wait-Log -Pattern '警告：Explorer 内的菜单组件是旧版' -Since $mk -TimeoutSec 20
             Assert-True $l '日志里没有旧版警告'
@@ -82,12 +82,12 @@ try {
             Wait-Ms 5000
             $l
         }
-        Stop-DeskNext | Out-Null; Wait-Ms 1500
+        Stop-DeskNook | Out-Null; Wait-Ms 1500
     }
 
     # ================================================================ 1 双击空白处隐藏 / 显示
     $mk = Get-LogMark
-    Start-DeskNext | Out-Null; Wait-Ms 2500
+    Start-DeskNook | Out-Null; Wait-Ms 2500
     $base = Shot 'h-01-visible'
     Invoke-Test '双击空白处隐藏（淡出）→ 只剩壁纸' {
         DoubleClick-Mouse $bp.X $bp.Y -Delay 40
@@ -97,7 +97,7 @@ try {
         $d = Rect-Diff $base $hid $Script:IconRect
         Assert-True ($d -gt 0.02) "图标区域没有变化（diff=$d）"
         Assert-True (-not [DnTest.Ext]::SystemListViewVisible()) '隐藏状态下系统 ListView 不应出现'
-        Assert-True (Wait-Log -Pattern 'DeskNext 图标显示状态：隐藏' -Since $mk -TimeoutSec 3) '日志没有隐藏记录'
+        Assert-True (Wait-Log -Pattern 'DeskNook 图标显示状态：隐藏' -Since $mk -TimeoutSec 3) '日志没有隐藏记录'
         Wait-Saved
         Assert-True ((Read-Json 'layout.json').View.IconsHidden -eq $true) 'layout.json 没有持久化隐藏状态'
         "diff=$([Math]::Round($d, 3))"
@@ -110,9 +110,9 @@ try {
         "项数=$($r.Texts.Count)"
     }
     Invoke-Test '重启程序后保持隐藏' {
-        Stop-DeskNext | Out-Null; Wait-Ms 1500
+        Stop-DeskNook | Out-Null; Wait-Ms 1500
         Assert-True ([DnTest.Ext]::SystemListViewVisible()) '退出后系统图标应恢复'
-        Start-DeskNext | Out-Null; Wait-Ms 2500
+        Start-DeskNook | Out-Null; Wait-Ms 2500
         $hid2 = Shot 'h-04-restart-hidden'
         $d = Rect-Diff $base $hid2 $Script:IconRect
         Assert-True ($d -gt 0.02) "重启后图标又出现了（diff=$d）"
@@ -139,7 +139,7 @@ try {
         Assert-True (Wait-Log -Pattern '收到第二个实例的请求：打开设置窗口' -Since $mk2 -TimeoutSec 3) '日志没有第二实例请求'
         Wait-Ms 600
         Save-Screen -Name 'h-06-settings-general' -Rect (Get-WindowRect $w) | Out-Null
-        Assert-True (@(Get-Process -Name DeskNext).Count -eq 1) '第二个实例应自行退出（只剩一个 DeskNext 进程）'
+        Assert-True (@(Get-Process -Name DeskNook).Count -eq 1) '第二个实例应自行退出（只剩一个 DeskNook 进程）'
         $chk = Get-UiaById $w 'DblChk'
         Assert-True ($chk.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Current.ToggleState -eq 'On') '双击开关默认应为开'
         Click-Uia $chk
@@ -348,13 +348,13 @@ try {
     if (Want '崩溃') {
         Invoke-Test '崩溃兜底：强杀后重启日志记录异常退出；正常退出删除标记' {
             Assert-True (Test-Path $Script:FlagPath) '运行期间应存在 running.flag'
-            Stop-ProcessByName DeskNext; Wait-Ms 800
+            Stop-ProcessByName DeskNook; Wait-Ms 800
             [void][DnTest.Native]::ShowSystemIcons()
             Assert-True (Test-Path $Script:FlagPath) '强杀后标记应残留'
             $mk4 = Get-LogMark
-            Start-DeskNext | Out-Null; Wait-Ms 1500
+            Start-DeskNook | Out-Null; Wait-Ms 1500
             Assert-True (Wait-Log -Pattern '检测到上次异常退出' -Since $mk4 -TimeoutSec 5) '日志没有记录上次异常退出'
-            Stop-DeskNext | Out-Null; Wait-Ms 800
+            Stop-DeskNook | Out-Null; Wait-Ms 800
             Assert-True (-not (Test-Path $Script:FlagPath)) '正常退出后应删除 running.flag'
             Assert-True ([DnTest.Ext]::SystemListViewVisible()) '正常退出后系统图标应恢复'
             '强杀后残留标记 → 重启记录日志 → 正常退出清除'
@@ -364,11 +364,11 @@ try {
     # ================================================================ 8 托盘“退出”
     if (Want '退出') {
         Invoke-Test '托盘退出：进程结束、系统图标恢复' {
-            Start-DeskNext | Out-Null; Wait-Ms 2500
+            Start-DeskNook | Out-Null; Wait-Ms 2500
             Open-TrayMenu | Out-Null; Click-TrayMenuItem '退出' 1500
             $deadline = (Get-Date).AddSeconds(8)
-            while ((Get-Date) -lt $deadline -and (Get-Process -Name DeskNext -ErrorAction SilentlyContinue)) { Start-Sleep -Milliseconds 200 }
-            Assert-True (-not (Get-Process -Name DeskNext -ErrorAction SilentlyContinue)) '托盘退出后进程仍在'
+            while ((Get-Date) -lt $deadline -and (Get-Process -Name DeskNook -ErrorAction SilentlyContinue)) { Start-Sleep -Milliseconds 200 }
+            Assert-True (-not (Get-Process -Name DeskNook -ErrorAction SilentlyContinue)) '托盘退出后进程仍在'
             Assert-True ([DnTest.Ext]::SystemListViewVisible()) '退出后系统图标应恢复'
             Wait-Ms 1000
             $t = Locate-TrayIcon
@@ -381,7 +381,7 @@ try {
 finally {
     try { Close-SettingsWindow } catch { }
     try { Press-Key Escape } catch { }
-    Stop-DeskNext | Out-Null
+    Stop-DeskNook | Out-Null
     Wait-Ms 800
     [void][DnTest.Native]::ShowSystemIcons()
     Clear-TestArtifacts
@@ -392,5 +392,5 @@ finally {
     Stop-ProcessByName notepad
 }
 $fails = Show-Summary
-Write-Host "DeskNext 进程：$(@(Get-Process -Name DeskNext -ErrorAction SilentlyContinue).Count)；系统图标可见：$([DnTest.Ext]::SystemListViewVisible())；Run 值：$(Get-RunValue)"
+Write-Host "DeskNook 进程：$(@(Get-Process -Name DeskNook -ErrorAction SilentlyContinue).Count)；系统图标可见：$([DnTest.Ext]::SystemListViewVisible())；Run 值：$(Get-RunValue)"
 exit $fails

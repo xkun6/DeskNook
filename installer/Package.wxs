@@ -1,12 +1,12 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
 
   <!--
-    桌面整理（DeskNext）安装包：per-machine、x64、自带 .NET 运行时。
-    版本号取自 DeskNext.exe 的文件版本（csproj 的 Version），UpgradeCode 固定不变，升级靠 MajorUpgrade。
+    桌面整理（DeskNook）安装包：per-machine、x64、自带 .NET 运行时。
+    版本号取自 DeskNook.exe 的文件版本（csproj 的 Version），UpgradeCode 固定不变，升级靠 MajorUpgrade。
   -->
   <Package Name="桌面整理"
-           Manufacturer="DeskNext"
-           Version="!(bind.FileVersion.DeskNext.exe)"
+           Manufacturer="DeskNook"
+           Version="!(bind.FileVersion.DeskNook.exe)"
            UpgradeCode="E1003CA2-7DC8-4599-8EA1-FD0D1122559E"
            Language="2052"
            Scope="perMachine">
@@ -15,7 +15,7 @@
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
     <!-- 添加/删除程序：显示名取 ProductName，图标用应用 ico；保留“卸载”，不提供“修改” -->
-    <Icon Id="app.ico" SourceFile="..\src\DeskNext\Assets\app.ico" />
+    <Icon Id="app.ico" SourceFile="..\src\DeskNook\Assets\app.ico" />
     <Property Id="ARPPRODUCTICON" Value="app.ico" />
     <Property Id="ARPNOMODIFY" Value="1" />
 
@@ -24,20 +24,20 @@
     <Property Id="DESKTOPSHORTCUT" Value="1" Secure="yes" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="DeskNext">
+      <Directory Id="INSTALLFOLDER" Name="DeskNook">
 
         <!-- 主程序单独成组件（快捷方式与自定义动作都引用它），其余发布文件用 Files 通配收集 -->
-        <Component Id="DeskNextExe" Bitness="always64">
-          <File Id="DeskNext.exe" Source="$(PublishDir)DeskNext.exe" KeyPath="yes" />
+        <Component Id="DeskNookExe" Bitness="always64">
+          <File Id="DeskNook.exe" Source="$(PublishDir)DeskNook.exe" KeyPath="yes" />
         </Component>
 
       </Directory>
     </StandardDirectory>
 
-    <!-- 发布目录全部文件（运行时 + 程序集 + DeskNextShellExt.dll），排除 pdb；data/ 由 build-installer.ps1 保证不在发布目录里 -->
+    <!-- 发布目录全部文件（运行时 + 程序集 + DeskNookShellExt.dll），排除 pdb；data/ 由 build-installer.ps1 保证不在发布目录里 -->
     <ComponentGroup Id="PublishFiles" Directory="INSTALLFOLDER">
       <Files Include="$(PublishDir)**">
-        <Exclude Files="$(PublishDir)DeskNext.exe" />
+        <Exclude Files="$(PublishDir)DeskNook.exe" />
         <Exclude Files="$(PublishDir)**\*.pdb" />
       </Files>
     </ComponentGroup>
@@ -45,56 +45,56 @@
     <!-- 开始菜单快捷方式：固定创建（all users） -->
     <StandardDirectory Id="ProgramMenuFolder">
       <Component Id="StartMenuShortcut" Bitness="always64">
-        <Shortcut Id="StartMenuShortcut" Name="桌面整理" Description="桌面整理" Target="[INSTALLFOLDER]DeskNext.exe" WorkingDirectory="INSTALLFOLDER" />
-        <RegistryValue Root="HKLM" Key="Software\DeskNext" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+        <Shortcut Id="StartMenuShortcut" Name="桌面整理" Description="桌面整理" Target="[INSTALLFOLDER]DeskNook.exe" WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKLM" Key="Software\DeskNook" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </StandardDirectory>
 
     <!-- 桌面快捷方式：受 DESKTOPSHORTCUT 控制 -->
     <StandardDirectory Id="DesktopFolder">
       <Component Id="DesktopShortcut" Bitness="always64" Condition="DESKTOPSHORTCUT=1">
-        <Shortcut Id="DesktopShortcut" Name="桌面整理" Description="桌面整理" Target="[INSTALLFOLDER]DeskNext.exe" WorkingDirectory="INSTALLFOLDER" />
-        <RegistryValue Root="HKLM" Key="Software\DeskNext" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
+        <Shortcut Id="DesktopShortcut" Name="桌面整理" Description="桌面整理" Target="[INSTALLFOLDER]DeskNook.exe" WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKLM" Key="Software\DeskNook" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </StandardDirectory>
 
     <Feature Id="Main" Title="桌面整理" Level="1" AllowAdvertise="no" AllowAbsent="no">
-      <ComponentRef Id="DeskNextExe" />
+      <ComponentRef Id="DeskNookExe" />
       <ComponentRef Id="StartMenuShortcut" />
       <ComponentRef Id="DesktopShortcut" />
       <ComponentGroupRef Id="PublishFiles" />
     </Feature>
 
     <!--
-      以安装用户身份（deferred + Impersonate）运行 DeskNext.exe 的命令行开关：
+      以安装用户身份（deferred + Impersonate）运行 DeskNook.exe 的命令行开关：
       HKCU 属于用户而不是 per-machine 安装服务，所以开机自启 / Shell 扩展注册都交给 exe 自己改写。
       全部 Return="ignore"：失败不拦截安装 / 卸载。
     -->
-    <CustomAction Id="DeskNext.AutostartOn" FileRef="DeskNext.exe" ExeCommand="--autostart=on" Execute="deferred" Impersonate="yes" Return="ignore" />
-    <CustomAction Id="DeskNext.Exit" FileRef="DeskNext.exe" ExeCommand="--exit" Execute="deferred" Impersonate="yes" Return="ignore" />
-    <CustomAction Id="DeskNext.Unregister" FileRef="DeskNext.exe" ExeCommand="--unregister" Execute="deferred" Impersonate="yes" Return="ignore" />
+    <CustomAction Id="DeskNook.AutostartOn" FileRef="DeskNook.exe" ExeCommand="--autostart=on" Execute="deferred" Impersonate="yes" Return="ignore" />
+    <CustomAction Id="DeskNook.Exit" FileRef="DeskNook.exe" ExeCommand="--exit" Execute="deferred" Impersonate="yes" Return="ignore" />
+    <CustomAction Id="DeskNook.Unregister" FileRef="DeskNook.exe" ExeCommand="--unregister" Execute="deferred" Impersonate="yes" Return="ignore" />
 
     <InstallExecuteSequence>
       <!-- 安装 / 升级 / 修复：按选项写入开机自启 -->
-      <Custom Action="DeskNext.AutostartOn" After="InstallFiles" Condition="AUTOSTART=1 AND NOT (REMOVE=&quot;ALL&quot;)" />
+      <Custom Action="DeskNook.AutostartOn" After="InstallFiles" Condition="AUTOSTART=1 AND NOT (REMOVE=&quot;ALL&quot;)" />
       <!-- 卸载与升级（旧版被移除）：先让运行中的实例退出（恢复系统图标），再删文件 -->
-      <Custom Action="DeskNext.Exit" Before="DeskNext.Unregister" Condition="REMOVE=&quot;ALL&quot;" />
+      <Custom Action="DeskNook.Exit" Before="DeskNook.Unregister" Condition="REMOVE=&quot;ALL&quot;" />
       <!-- 仅真正卸载：删除 Shell 扩展注册与开机自启（升级时保留） -->
-      <Custom Action="DeskNext.Unregister" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="DeskNook.Unregister" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
     </InstallExecuteSequence>
 
     <!-- 兜底：exe 仍被占用时请求其关闭（配合 Restart Manager，不强杀进程） -->
-    <util:CloseApplication Id="CloseDeskNext" Target="DeskNext.exe" CloseMessage="yes" EndSessionMessage="yes" RebootPrompt="no" />
+    <util:CloseApplication Id="CloseDeskNook" Target="DeskNook.exe" CloseMessage="yes" EndSessionMessage="yes" RebootPrompt="no" />
 
-    <!-- 完成页「运行桌面整理」：用 explorer.exe 间接启动，使 DeskNext 以普通用户（非提权）身份运行 -->
+    <!-- 完成页「运行桌面整理」：用 explorer.exe 间接启动，使 DeskNook 以普通用户（非提权）身份运行 -->
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="运行桌面整理" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
-    <CustomAction Id="LaunchApplication" Directory="INSTALLFOLDER" ExeCommand="&quot;[WindowsFolder]explorer.exe&quot; &quot;[#DeskNext.exe]&quot;" Return="asyncNoWait" />
+    <CustomAction Id="LaunchApplication" Directory="INSTALLFOLDER" ExeCommand="&quot;[WindowsFolder]explorer.exe&quot; &quot;[#DeskNook.exe]&quot;" Return="asyncNoWait" />
 
     <!-- 界面：欢迎 → 选择目录 → 选项 → 确认安装（不含许可协议页，项目没有 EULA） -->
     <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
 
-    <UI Id="DeskNextUI">
+    <UI Id="DeskNookUI">
       <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
       <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
       <TextStyle Id="WixUI_Font_Title" FaceName="Tahoma" Size="9" Bold="yes" />

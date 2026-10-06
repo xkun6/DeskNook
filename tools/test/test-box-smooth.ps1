@@ -120,7 +120,7 @@ try {
 
     Invoke-Test 'S07 拖动平滑度：60 步 MouseMove，期间不重建桌面' {
         $b = (Get-Boxes)[0].Rect
-        $proc = Get-Process -Name DeskNext
+        $proc = Get-Process -Name DeskNook
         $cpu0 = $proc.TotalProcessorTime.TotalMilliseconds
         $mark = Get-LogMark
         $x1 = [int]($b.X + 100); $y1 = [int]($b.Y + 16)
@@ -142,7 +142,7 @@ try {
         $cpu1 = $proc.TotalProcessorTime.TotalMilliseconds
         Assert-True ($rebuildsDuring -eq 0) "拖动期间重建了 $rebuildsDuring 次"
         $m = ($per | Measure-Object -Average -Maximum)
-        "60 步总耗时 $([Math]::Round($total))ms；SetCursorPos 平均 $([Math]::Round($m.Average,2))ms 最大 $([Math]::Round($m.Maximum,2))ms；DeskNext CPU +$([Math]::Round($cpu1 - $cpu0))ms；拖动期重建=$rebuildsDuring"
+        "60 步总耗时 $([Math]::Round($total))ms；SetCursorPos 平均 $([Math]::Round($m.Average,2))ms 最大 $([Math]::Round($m.Maximum,2))ms；DeskNook CPU +$([Math]::Round($cpu1 - $cpu0))ms；拖动期重建=$rebuildsDuring"
     }
 }
 finally {

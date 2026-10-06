@@ -1,9 +1,9 @@
 ﻿. $PSScriptRoot\box-lib.ps1
-Stop-DeskNext | Out-Null
+Stop-DeskNook | Out-Null
 Backup-Layout
 Minimize-All
 try {
-  Start-DeskNext | Out-Null; Wait-Ms 1500
+  Start-DeskNook | Out-Null; Wait-Ms 1500
   $b = Get-BlankPoint
   Click-ContextMenu $b.X $b.Y -Path @('桌面整理 ▸ 新建格子')
   Wait-Ms 1000
@@ -12,5 +12,5 @@ try {
   Get-Boxes | ConvertTo-Json -Depth 5
 } finally {
   Press-Key Escape
-  Stop-DeskNext | Out-Null; Restore-Layout; Restore-All
+  Stop-DeskNook | Out-Null; Restore-Layout; Restore-All
 }

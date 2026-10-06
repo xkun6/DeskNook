@@ -1,11 +1,11 @@
 ﻿. $PSScriptRoot\common.ps1
-Stop-DeskNext | Out-Null
+Stop-DeskNook | Out-Null
 Remove-TestFiles
 New-TestFile -Name xk-test-a.txt -Content "hello" | Out-Null
 Wait-Ms 1000
 Minimize-All
 try {
-  $m = Start-DeskNext; Wait-Ms 1500
+  $m = Start-DeskNook; Wait-Ms 1500
   $mark = Get-LogMark
   $p = New-TestFile -Name xk-test-new.txt
   $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -22,4 +22,4 @@ try {
   $hit = Wait-Log -Pattern '删除 1' -Since $mark -TimeoutSec 5
   "delete sync: $($sw.ElapsedMilliseconds) ms -> $hit"
   Wait-Ms 600; Save-Screen -Name s3-deleted | Out-Null
-} finally { Stop-DeskNext | Out-Null; Restore-All }
+} finally { Stop-DeskNook | Out-Null; Restore-All }

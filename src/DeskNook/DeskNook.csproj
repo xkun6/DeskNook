@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>DeskNook</AssemblyName>
+    <RootNamespace>DeskNook</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- P/Invoke 使用 x64 的 *LongPtr 入口 -->
+    <PlatformTarget>x64</PlatformTarget>
+    <ApplicationIcon>Assets/app.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <Product>桌面整理</Product>
+    <AssemblyTitle>桌面整理</AssemblyTitle>
+    <Description>桌面整理</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 应用图标与菜单线条图标：嵌入资源，运行时释放到 data/icons -->
+    <EmbeddedResource Include="Assets/*.ico" LogicalName="Assets.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DeskNook.Tests" />
+  </ItemGroup>
+
+  <!-- Shell 扩展（C++）：用 VS2022 的 MSBuild 编译 src/DeskNookShellExt，并把 DeskNookShellExt.dll 作为输出内容复制到输出目录 -->
+  <PropertyGroup>
+    <ShellExtProj>$(MSBuildThisFileDirectory)..\DeskNookShellExt\DeskNookShellExt.vcxproj</ShellExtProj>
+    <ShellExtDll>$(MSBuildThisFileDirectory)..\DeskNookShellExt\bin\Release\DeskNookShellExt.dll</ShellExtDll>
+    <VsWhereExe>$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer\vswhere.exe</VsWhereExe>
+  </PropertyGroup>
+
+  <Target Name="BuildShellExt" BeforeTargets="BeforeBuild">
+    <Exec Command="&quot;$(VsWhereExe)&quot; -version &quot;[17.0,18.0)&quot; -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath"
+          ConsoleToMSBuild="true" StandardOutputImportance="low" Condition="Exists('$(VsWhereExe)')">
+      <Output TaskParameter="ConsoleOutput" PropertyName="VsInstallPath" />
+    </Exec>
+    <PropertyGroup>
+      <VsMsBuild>$(VsInstallPath)\MSBuild\Current\Bin\MSBuild.exe</VsMsBuild>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(VsMsBuild)') And !Exists('$(ShellExtDll)')" Text="找不到带 C++ 工具集的 Visual Studio 2022，无法编译 DeskNookShellExt.dll" />
+    <Exec Condition="Exists('$(VsMsBuild)')" Command="&quot;$(VsMsBuild)&quot; &quot;$(ShellExtProj)&quot; -p:Configuration=Release -p:Platform=x64 -nologo -v:q -clp:ErrorsOnly" />
+  </Target>
+
+  <ItemGroup>
+    <None Include="$(ShellExtDll)" Link="DeskNookShellExt.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+
+</Project>

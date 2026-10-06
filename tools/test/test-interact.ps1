@@ -1,5 +1,5 @@
 ﻿. $PSScriptRoot\common.ps1
-Stop-DeskNext | Out-Null
+Stop-DeskNook | Out-Null
 Remove-TestFiles
 New-TestFile -Name xk-test-a.txt -Content "hello" | Out-Null
 New-TestFile -Name xk-test-b.txt -Content "hello2" | Out-Null
@@ -7,7 +7,7 @@ Wait-Ms 1000
 Minimize-All
 $dd = [Environment]::GetFolderPath('Desktop')
 try {
-  Start-DeskNext | Out-Null; Wait-Ms 1500
+  Start-DeskNook | Out-Null; Wait-Ms 1500
   $a = Get-IconCenter 'xk-test-a.txt'; $b = Get-IconCenter 'xk-test-b.txt'
   "a=$($a.X),$($a.Y) b=$($b.X),$($b.Y)"
   # 单击选中
@@ -43,8 +43,8 @@ try {
   Drag-Mouse $r.X $r.Y 700 500; Wait-Ms 1200; Save-Screen -Name s4-dragged | Out-Null
   Wait-Ms 800
   $before = Get-IconCenter 'xk-test-renamed.txt'; "after drag slot: col $($before.Col) row $($before.Row)"
-  Stop-DeskNext | Out-Null; Wait-Ms 1000
-  Start-DeskNext | Out-Null; Wait-Ms 1500
+  Stop-DeskNook | Out-Null; Wait-Ms 1000
+  Start-DeskNook | Out-Null; Wait-Ms 1500
   $after = Get-IconCenter 'xk-test-renamed.txt'; "after restart slot: col $($after.Col) row $($after.Row)"
   Save-Screen -Name s4-restarted | Out-Null
-} finally { Stop-DeskNext | Out-Null; Stop-ProcessByName notepad; Restore-All }
+} finally { Stop-DeskNook | Out-Null; Stop-ProcessByName notepad; Restore-All }

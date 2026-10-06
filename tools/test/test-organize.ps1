@@ -101,7 +101,7 @@ $Names = @('xk-test-a.txt', 'xk-test-b.docx', 'xk-test-c.png', 'xk-test-d.mp4', 
 $DirName = 'xk-test-dir'
 $PreShot = Join-Path $Script:OutDir 'c-00-pre.png'
 
-Stop-DeskNext | Out-Null
+Stop-DeskNook | Out-Null
 Backup-All
 Remove-Item (Join-Path $AppDir 'settings.json'), (Join-Path $AppDir 'organize-undo.json') -Force -ErrorAction SilentlyContinue
 Clear-TestArtifacts
@@ -112,7 +112,7 @@ New-TestFile -Name $DirName -Directory | Out-Null
 Wait-Ms 1000
 
 try {
-    Start-DeskNext | Out-Null; Wait-Ms 1800; Wait-Saved
+    Start-DeskNook | Out-Null; Wait-Ms 1800; Wait-Saved
     $boxCount0 = @((Read-Layout).Boxes).Count
     Save-Screen -Name c-01-before | Out-Null
 
@@ -178,8 +178,8 @@ try {
     Invoke-Test 'C04 再整理 → 重启程序 → 撤销整理仍可用' {
         Right-ClickBlank @('一键整理'); Wait-Ms 1500; Wait-Saved
         Assert-True (Test-Path (Join-Path $AppDir 'organize-undo.json')) '没有写出 organize-undo.json'
-        Stop-DeskNext | Out-Null; Wait-Ms 1500
-        Start-DeskNext | Out-Null; Wait-Ms 2000
+        Stop-DeskNook | Out-Null; Wait-Ms 1500
+        Start-DeskNook | Out-Null; Wait-Ms 2000
         Save-Screen -Name c-04-restarted | Out-Null
         $p = Find-BlankCell
         Click-Mouse $p.X $p.Y -Button Right; Wait-Ms 700
@@ -254,7 +254,7 @@ try {
 }
 finally {
     try { Press-Key Escape } catch { }
-    Stop-DeskNext | Out-Null
+    Stop-DeskNook | Out-Null
     Wait-Ms 800
     Clear-TestArtifacts
     Restore-AllJson

@@ -114,7 +114,7 @@ function Find-MenuItem {
 function Get-MenuTexts { return @([DnTest.MenuApi]::Items() | ForEach-Object { ($_.Split('|')[0] -replace '\(&.\)|&', '').Trim() }) }
 
 # 路径式菜单选择：Path 为数组（@('桌面整理','新建格子')）或用 ▸ 分隔的字符串（'桌面整理 ▸ 新建格子'）；
-# 在已弹出的菜单里依次点击各级（父级点击即展开子菜单）。统一入口，适用于 explorer.exe 弹出的菜单和 DeskNext 自己弹出的菜单。
+# 在已弹出的菜单里依次点击各级（父级点击即展开子菜单）。统一入口，适用于 explorer.exe 弹出的菜单和 DeskNook 自己弹出的菜单。
 function Split-MenuPath {
     param([Parameter(Mandatory)][string[]]$Path)
     return @($Path | ForEach-Object { $_ -split '\s*▸\s*' } | Where-Object { $_ -ne '' })
@@ -180,19 +180,19 @@ function Drag-Mouse-Shot {
 # ---------- 测试生命周期 ----------
 function Start-BoxTest {
     param([string[]]$Files = @('a', 'b', 'c'), [switch]$NoStart)
-    Stop-DeskNext | Out-Null
+    Stop-DeskNook | Out-Null
     Backup-Layout
     Remove-Item $Script:LayoutPath -Force -ErrorAction SilentlyContinue   # 从空布局开始（原布局已备份，结束时还原）
     Clear-TestArtifacts
     foreach ($f in $Files) { New-TestFile -Name "xk-test-$f.txt" -Content "xk-test $f" | Out-Null }
     Wait-Ms 1000
     Minimize-All
-    if (-not $NoStart) { Start-DeskNext | Out-Null; Wait-Ms 1500; Wait-Saved }
+    if (-not $NoStart) { Start-DeskNook | Out-Null; Wait-Ms 1500; Wait-Saved }
 }
 
 function Finish-BoxTest {
     try { Press-Key Escape } catch { }
-    Stop-DeskNext | Out-Null
+    Stop-DeskNook | Out-Null
     Wait-Ms 800
     Clear-TestArtifacts
     Restore-Layout

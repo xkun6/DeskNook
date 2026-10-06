@@ -39,8 +39,8 @@ try {
 
     Invoke-Test 'C02 重启程序后布局完全还原（截图对比 + 布局 JSON 对比）' {
         $jsonBefore = (Get-Content $Script:LayoutPath -Raw -Encoding UTF8 | ConvertFrom-Json).Boxes | ConvertTo-Json -Depth 6
-        Stop-DeskNext | Out-Null; Wait-Ms 1500
-        Start-DeskNext | Out-Null; Wait-Ms 2500
+        Stop-DeskNook | Out-Null; Wait-Ms 1500
+        Start-DeskNook | Out-Null; Wait-Ms 2500
         Move-Mouse 2400 1300 300; Wait-Ms 800
         Save-Screen -Name b-c02-after-restart -Rect $Rect | Out-Null
         Wait-Saved

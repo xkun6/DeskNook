@@ -80,9 +80,9 @@ $Script:TestRoot = $PSScriptRoot
 $Script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $Script:OutDir   = Join-Path $PSScriptRoot 'out'
 if (-not (Test-Path $Script:OutDir)) { New-Item -ItemType Directory -Path $Script:OutDir | Out-Null }
-$Script:ExePath  = Join-Path $Script:RepoRoot 'src\DeskNext\bin\Release\net9.0-windows\DeskNext.exe'
+$Script:ExePath  = Join-Path $Script:RepoRoot 'src\DeskNook\bin\Release\net9.0-windows\DeskNook.exe'
 $Script:DataDir  = Join-Path (Split-Path $Script:ExePath -Parent) 'data'   # 数据一律在程序目录下的 data
-$Script:LogPath  = Join-Path $Script:DataDir 'logs\desknext.log'
+$Script:LogPath  = Join-Path $Script:DataDir 'logs\desknook.log'
 $Script:DesktopDir = [Environment]::GetFolderPath('Desktop')
 $Script:Results  = New-Object System.Collections.ArrayList
 
@@ -301,7 +301,7 @@ function Wait-Log {
 
 # ---------- 应用生命周期 ----------
 # 返回启动前的日志行数（可作为 Wait-Log 的 Since）
-function Start-DeskNext {
+function Start-DeskNook {
     param([string[]]$AppArgs = @(), [int]$TimeoutSec = 20)
     if (-not (Test-Path $Script:ExePath)) { throw "找不到 $Script:ExePath，请先 dotnet build -c Release" }
     $mark = Get-LogMark
@@ -313,15 +313,15 @@ function Start-DeskNext {
     return $mark
 }
 
-function Stop-DeskNext {
+function Stop-DeskNook {
     param([int]$TimeoutSec = 10)
-    if (-not (Get-Process -Name DeskNext -ErrorAction SilentlyContinue)) { return $true }
+    if (-not (Get-Process -Name DeskNook -ErrorAction SilentlyContinue)) { return $true }
     if (Test-Path $Script:ExePath) { Start-Process -FilePath $Script:ExePath -ArgumentList '--exit' | Out-Null }
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
-    while ((Get-Date) -lt $deadline -and (Get-Process -Name DeskNext -ErrorAction SilentlyContinue)) { Start-Sleep -Milliseconds 200 }
-    if (Get-Process -Name DeskNext -ErrorAction SilentlyContinue) {
-        Write-Warning 'DeskNext 未响应 --exit，强制结束并兜底恢复系统图标'
-        Stop-ProcessByName DeskNext
+    while ((Get-Date) -lt $deadline -and (Get-Process -Name DeskNook -ErrorAction SilentlyContinue)) { Start-Sleep -Milliseconds 200 }
+    if (Get-Process -Name DeskNook -ErrorAction SilentlyContinue) {
+        Write-Warning 'DeskNook 未响应 --exit，强制结束并兜底恢复系统图标'
+        Stop-ProcessByName DeskNook
         Start-Sleep -Milliseconds 300
         [void][DnTest.Native]::ShowSystemIcons()
         return $false

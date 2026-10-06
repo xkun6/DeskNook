@@ -20,7 +20,7 @@ namespace DnTest {
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h, System.Text.StringBuilder sb, int max);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
     public static uint ShellPid() { uint pid; IntPtr pm = FindWindow("Progman", null); if (pm == IntPtr.Zero) return 0; GetWindowThreadProcessId(pm, out pid); return pid; }
-    // 系统桌面 SysListView32 是否可见（DeskNext 运行时应一直隐藏）
+    // 系统桌面 SysListView32 是否可见（DeskNook 运行时应一直隐藏）
     public static bool SystemListViewVisible() {
       IntPtr pm = FindWindow("Progman", null);
       IntPtr dv = pm == IntPtr.Zero ? IntPtr.Zero : FindWindowEx(pm, IntPtr.Zero, "SHELLDLL_DefView", null);

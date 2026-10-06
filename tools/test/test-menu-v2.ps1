@@ -16,7 +16,7 @@ function Assert-ExplorerAlive {
 function Has-Text { param($Texts, [string]$Pat) return @($Texts | Where-Object { $_ -like "*$Pat*" }).Count -gt 0 }
 
 Backup-AppData
-Stop-DeskNext | Out-Null
+Stop-DeskNook | Out-Null
 Clear-TestArtifacts
 Clear-NewFolders
 if (Test-Path $Script:TestRoot2) { Remove-Item $Script:TestRoot2 -Recurse -Force -ErrorAction SilentlyContinue }
@@ -32,10 +32,10 @@ Write-Host "Explorer PID：$($Script:ExplorerPids -join ',')"
 Minimize-All
 
 try {
-    # ---------------------------------------------------------------- 0 导入位置（让原生与 DeskNext 的图标位置一致）
+    # ---------------------------------------------------------------- 0 导入位置（让原生与 DeskNook 的图标位置一致）
     for ($k = 0; $k -lt 2; $k++) {
         Remove-Item (Join-Path $Script:AppDataDir 'layout.json') -Force -ErrorAction SilentlyContinue
-        Start-DeskNext | Out-Null; Wait-Ms 2500; Wait-Saved; Stop-DeskNext | Out-Null; Wait-Ms 2500
+        Start-DeskNook | Out-Null; Wait-Ms 2500; Wait-Saved; Stop-DeskNook | Out-Null; Wait-Ms 2500
     }
     $a = Get-IconCenter 'xk-test-a.txt'
     $bp = Get-BlankPoint
@@ -58,10 +58,10 @@ try {
         Assert-ExplorerAlive
     }
 
-    # ---------------------------------------------------------------- 2 启动 DeskNext，D / D'
+    # ---------------------------------------------------------------- 2 启动 DeskNook，D / D'
     $shellMark = Get-FileMark $Script:ShellLogPath
     $dnMark = Get-LogMark
-    Start-DeskNext | Out-Null; Wait-Ms 3000
+    Start-DeskNook | Out-Null; Wait-Ms 3000
     Invoke-Test '代理已加载' {
         $l = Wait-Log -Pattern '菜单代理已(加载|就绪)' -Since $dnMark -TimeoutSec 15
         Assert-True $l '日志里没有「菜单代理已加载/就绪」'
@@ -227,7 +227,7 @@ try {
             Assert-True $l '没有出现原位重命名框'
             $l
         }
-        Invoke-Test '查看 ▸ 小图标/原大小 → DeskNext 图标大小随之变化' {
+        Invoke-Test '查看 ▸ 小图标/原大小 → DeskNook 图标大小随之变化' {
             Wait-Saved
             $orig = [int](Read-Layout).View.IconSize
             $Script:Info.OrigSize = $orig
@@ -244,25 +244,25 @@ try {
             Assert-True $ok2 "没能恢复到原图标大小 $orig"
             "原=$orig → 32 → $orig"
         }
-        Invoke-Test '查看 ▸ 显示桌面图标 → DeskNext 图标隐藏/显示，系统 ListView 保持隐藏' {
+        Invoke-Test '查看 ▸ 显示桌面图标 → DeskNook 图标隐藏/显示，系统 ListView 保持隐藏' {
             $mk = Get-LogMark
             Assert-True (-not [DnTest.Ext]::SystemListViewVisible()) '切换前系统 ListView 应已隐藏'
             Click-Mouse $bp.X $bp.Y -Button Right -Delay 900
             Click-MenuPath @('查看', '显示桌面图标')
-            $l1 = Wait-Log -Pattern 'DeskNext 图标显示状态：隐藏' -Since $mk -TimeoutSec 6
+            $l1 = Wait-Log -Pattern 'DeskNook 图标显示状态：隐藏' -Since $mk -TimeoutSec 6
             Wait-Ms 600
             Save-Screen -Name 'm-6c-hidden' | Out-Null
             $sysHidden = -not [DnTest.Ext]::SystemListViewVisible()
             Click-Mouse $bp.X $bp.Y -Button Right -Delay 900
             Save-Screen -Name 'm-6c-hidden-menu' | Out-Null
             Click-MenuPath @('查看', '显示桌面图标')
-            $l2 = Wait-Log -Pattern 'DeskNext 图标显示状态：显示' -Since $mk -TimeoutSec 6
+            $l2 = Wait-Log -Pattern 'DeskNook 图标显示状态：显示' -Since $mk -TimeoutSec 6
             Wait-Ms 600
             Save-Screen -Name 'm-6c-shown' | Out-Null
             $sysHidden2 = -not [DnTest.Ext]::SystemListViewVisible()
-            Assert-True $l1 '没有隐藏 DeskNext 图标'
+            Assert-True $l1 '没有隐藏 DeskNook 图标'
             Assert-True $sysHidden '隐藏后系统 ListView 变可见了'
-            Assert-True $l2 '没有恢复显示 DeskNext 图标'
+            Assert-True $l2 '没有恢复显示 DeskNook 图标'
             Assert-True $sysHidden2 '恢复后系统 ListView 变可见了'
             '隐藏/显示均正常，系统 ListView 始终隐藏'
         }
@@ -347,9 +347,9 @@ try {
     # ---------------------------------------------------------------- 10 回退：--no-proxy 走进程内菜单
     if (Want '回退') {
         Invoke-Test '--no-proxy 回退到进程内菜单' {
-            Stop-DeskNext | Out-Null; Wait-Ms 1500
+            Stop-DeskNook | Out-Null; Wait-Ms 1500
             $mk = Get-LogMark; $smk = Get-FileMark $Script:ShellLogPath
-            Start-DeskNext -AppArgs @('--no-proxy') | Out-Null; Wait-Ms 2500
+            Start-DeskNook -AppArgs @('--no-proxy') | Out-Null; Wait-Ms 2500
             $r = Capture-Menu 'm-10-fallback-bg' $bp.X $bp.Y
             Assert-True (Has-Text $r.Texts '刷新') "回退菜单不正常：$($r.Texts -join '|')"
             Assert-True (Has-Text $r.Texts '一键整理') '回退菜单缺少自定义项'
@@ -363,7 +363,7 @@ try {
 }
 finally {
     try { Press-Key Escape } catch { }
-    Stop-DeskNext | Out-Null
+    Stop-DeskNook | Out-Null
     Wait-Ms 800
     Clear-TestArtifacts
     Clear-NewFolders
