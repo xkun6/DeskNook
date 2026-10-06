@@ -27,7 +27,7 @@ DeskNook（界面显示名「桌面整理」）：Windows 桌面整理工具。W
 2. 运行在 Explorer 里的 C++ 代码（`src/DeskNookShellExt`）要保证不拖垮 Explorer：异常不得越出边界（入口全部 `catch(...)`/`__try`），不跨线程持有 COM 指针，不在持锁时回调外部，通信必须有超时，日志不能阻塞。
 3. 提交信息一律用简体中文。
 4. 测试只创建、删除 `xk-test-` 前缀的桌面文件；测试前备份、结束后还原 `layout.json`、`settings.json`、`organize-undo.json` 与 `Run\DeskNook` 值，不碰用户真实文件。
-5. 构建或测试前先退出运行中的实例：`src\DeskNook\bin\Release\net9.0-windows\DeskNook.exe --exit`，否则 exe 被锁。
+5. 构建或测试前，只有当运行中的 DeskNook 进程路径就是开发输出目录（`src\DeskNook\bin\...`）时才需要退出它，否则 exe 被锁。`--exit` 走全局事件（`ExitSignal`），会关掉**所有**实例，包括用户安装目录里正在使用的那个；用户实例在运行时不要执行 `--exit`，先查进程路径（如 `(Get-Process DeskNook).Path`）。
 6. 不改 MSI 的 UpgradeCode、CLSID、COPYDATA magic；新增参数、设置、注册项要同步更新 docs/data-and-config.md。
 7. 文档里每条结论要对应 `文件:符号`；改了行为就同步改对应文档。
 8. 不要在文档或提交里写本机隐私（用户名路径、邮箱等），路径用相对路径或 `%AppData%` 之类变量。
