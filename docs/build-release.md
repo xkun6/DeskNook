@@ -86,8 +86,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/build-installer.ps1 [-
 - `MajorUpgrade DowngradeErrorMessage="已安装更新版本，无法安装此版本。" AllowSameVersionUpgrades="yes"`：升级靠固定 UpgradeCode，旧版被替换，拒绝降级。`AllowSameVersionUpgrades` 的原因：同一版本的“自带运行时/不带运行时”两种 MSI 的 ProductCode 不同，允许互相升级替换，避免并存两份安装记录。
 - 变体开关 `NoRuntime`：`installer/DeskNook.Installer.wixproj:NoRuntime`（默认 `false`）经 `DefineConstants` 传成 WiX 预处理变量 `$(NoRuntime)`。`Package.wxs` 里 `<?if $(NoRuntime) = "true" ?>` 内放 `netfx:DotNetCompatibilityCheck Property="DOTNETDESKTOP9" RuntimeType="desktop" Platform="x64" Version="9.0.0" RollForward="minor"`（与应用默认的 Minor 前滚策略一致）和 `Launch Condition="Installed OR DOTNETDESKTOP9 = "0""`：未安装 .NET 9 桌面运行时则提示下载链接并停止安装（已安装时跳过检查，卸载不受影响）。需要 `WixToolset.Netfx.wixext`，根元素声明 `xmlns:netfx`。
 - `MediaTemplate EmbedCab=yes`；ARP：图标 `app.ico`，`ARPNOMODIFY=1`（只有“卸载”）。
-- 目录：`ProgramFiles64Folder\DeskNook`（`INSTALLFOLDER`，界面可改目录）。`DeskNook.exe` 单独成 Component（`Bitness=always64`，`KeyPath`，**固定 `Guid="{16EB3D7D-1A37-5ADD-B757-D967A8BFEC9B}"`**，即 1.0.0 起的自动生成值，不要改），因为快捷方式与自定义动作都引用它；其余用 `<Files Include="$(PublishDir)**">` 通配收集，排除 exe 与 `*.pdb`。**data 目录不在安装包里**，卸载也不删数据。
-- 升级沿用旧安装目录：`Property Id="INSTALLFOLDER" Secure="yes"` 内放 `ComponentSearch Id="FindInstalledDeskNook" Guid="{16EB3D7D-…}" Type="directory"`（与 `DeskNookExe` 的固定 GUID 相同，AppSearch 把已安装的 `DeskNook.exe` 所在目录写进 `INSTALLFOLDER`）。不用注册表，是因为已发布的 1.0.0 没有记录安装目录，只能靠组件 GUID 反查；组件 GUID 是自动值，由目录、文件名、位数决定，所以显式固定，防止以后改目录或文件名导致漂移、找不到旧安装。旧版装在非默认目录时，新版因此仍装回原处。
+- 目录：`ProgramFiles64Folder\DeskNook`（`INSTALLFOLDER`，界面可改目录）。`DeskNook.exe` 单独成 Component（`Bitness=always64`，`KeyPath`，），因为快捷方式与自定义动作都引用它；其余用 `<Files Include="$(PublishDir)**">` 通配收集，排除 exe 与 `*.pdb`。**data 目录不在安装包里**，卸载也不删数据。
+- 记住安装目录：`InstallDirRegistry` 组件（放在 `INSTALLFOLDER` 内、`Bitness=always64`）写 `HKLM\Software\DeskNook\InstallDir`（`[INSTALLFOLDER]`，该值为 KeyPath，卸载随组件删除）；`Property Id="INSTALLFOLDER" Secure="yes"` 内的 `RegistrySearch Id="FindInstallDir"`（`Bitness="always64"`）读回，作为 `INSTALLFOLDER` 的默认值。1.0.0 没写这个值，所以升级 1.0.0 时用默认目录（MajorUpgrade 仍会先卸载 1.0.0）；1.0.1 起升级默认沿用上次目录。升级时界面仍走目录页（默认旧目录，可改到新位置）。
+- `DisplayVersion`：预处理变量，`DeskNook.Installer.wixproj` 的 `DefineConstants` 追加 `DisplayVersion=$(ProductVersion)`（三段版本，由 build-installer.ps1 传入）。用于界面文案 `$(DisplayVersion)`；不用 `[ProductVersion]`，因为 Package 的 Version 取自 exe 四段文件版本，界面上会显示成 “[IP]”。
 - 快捷方式：开始菜单（固定创建，all users）；桌面快捷方式受 `DESKTOPSHORTCUT=1` 控制。两个组件的 KeyPath 是 `HKLM\Software\DeskNook` 下的 DWORD（见 ICE 说明）。
 - `Feature Main`：`AllowAbsent=no`，包含上述全部组件。
 - 属性：`AUTOSTART=1`、`DESKTOPSHORTCUT=1`（`Secure=yes`，命令行可覆盖，如 `AUTOSTART=0`）。
@@ -109,9 +110,9 @@ HKCU 属于用户而不是 per-machine 的安装服务，所以开机自启和 S
 
 ### 界面
 
-自定义 UI（`UI Id="DeskNookUI"`，引用 `WixUI_Common` 与若干对话框）：欢迎 → 选择目录 → **选项页**（自写 `OptionsDlg`）→ 确认安装；升级（`WIX_UPGRADE_DETECTED`）时欢迎页 Next 直接到选项页、跳过目录页（`WelcomeDlg/Next` 两条条件 `NOT Installed AND [NOT] WIX_UPGRADE_DETECTED`），选项页 Back 回欢迎页；没有许可协议页（项目没有 EULA）；完成页带“运行桌面整理”复选框。
+自定义 UI（`UI Id="DeskNookUI"`，引用 `WixUI_Common` 与若干对话框）：欢迎 → 选择目录 → **选项页**（自写 `OptionsDlg`）→ 确认安装；升级时同样走目录页（`WelcomeDlg/Next` 为 `NOT Installed` → `InstallDirDlg`，`OptionsDlg/Back` 无条件回 `InstallDirDlg`），目录默认是上次安装目录，可改；没有许可协议页（项目没有 EULA）；完成页带“运行桌面整理”复选框。
 
-选项页的自启复选框在升级时用 `HideCondition="WIX_UPGRADE_DETECTED"` 隐藏，并用一个 `Hidden="yes" ShowCondition="WIX_UPGRADE_DETECTED"` 的文本替代，提示“升级安装将保留当前的开机自启设置”（WiX v5 里 `Control` 用 `HideCondition/ShowCondition` 属性控制显示）。标题与说明同样成对：全新安装显示“安装选项 / 选择需要的附加选项。”（`Title`/`Description`，升级时隐藏），升级显示“升级桌面整理 / 将升级到 v[ProductVersion]。”（`TitleUpgrade`/`DescriptionUpgrade`）；另有仅升级时显示的多行 `UpgradeNote`（Y=165）：提示先卸载旧版再安装新版、安装位置保持 `[INSTALLFOLDER]`、设置/格子布局/桌面文件保留。
+选项页的自启复选框在升级时用 `HideCondition="WIX_UPGRADE_DETECTED"` 隐藏，并用一个 `Hidden="yes" ShowCondition="WIX_UPGRADE_DETECTED"` 的文本替代，提示“升级安装将保留当前的开机自启设置”（WiX v5 里 `Control` 用 `HideCondition/ShowCondition` 属性控制显示）。标题与说明同样成对：全新安装显示“安装选项 / 选择需要的附加选项。”（`Title`/`Description`，升级时隐藏），升级显示“升级桌面整理 / 将升级到 v$(DisplayVersion)。”（`TitleUpgrade`/`DescriptionUpgrade`）；另有仅升级时显示的多行 `UpgradeNote`（Y=165）：提示先卸载旧版再安装新版、将安装到 `[INSTALLFOLDER]`、设置/格子布局/桌面文件保留。
 
 ### 被屏蔽的 ICE
 
@@ -124,7 +125,7 @@ HKCU 属于用户而不是 per-machine 的安装服务，所以开机自启和 S
 | 场景 | 结果 |
 |---|---|
 | 全新安装 | 文件到 `C:\Program Files\DeskNook`；按选项写自启、建快捷方式；数据在 `%AppData%\DeskNook` |
-| 升级 | 沿用旧安装目录（`ComponentSearch`）、界面跳过目录页并提示；`MajorUpgrade` 默认 `afterInstallValidate`：先完整卸载旧版再装新版；先 `--exit` 旧实例，换文件；**不动**自启与注册；新 DLL 在 Explorer 里不会立即生效（需重启 Explorer，程序会弹气泡） |
+| 升级 | 默认目录取自 `HKLM\Software\DeskNook\InstallDir`（1.0.1 起记录；升级 1.0.0 用默认目录），界面仍显示目录页可改，选项页显示升级标题与提示；`MajorUpgrade` 默认 `afterInstallValidate`：先完整卸载旧版再装新版；先 `--exit` 旧实例，换文件；**不动**自启与注册；新 DLL 在 Explorer 里不会立即生效（需重启 Explorer，程序会弹气泡） |
 | 卸载 | `--exit` → `--unregister`（删注册与自启）→ 删文件；数据保留 |
 | 静默 | `msiexec /i … /qn [AUTOSTART=0 DESKTOPSHORTCUT=0]`；静默安装不会启动程序 |
 

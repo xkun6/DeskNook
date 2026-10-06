@@ -16,7 +16,7 @@
          ICE61：MajorUpgrade 开了 AllowSameVersionUpgrades（同版本的两种变体可以互相覆盖），ICE61 对此只给警告 -->
     <SuppressIces>ICE38;ICE43;ICE57;ICE61</SuppressIces>
     <Cultures>zh-CN</Cultures>
-    <DefineConstants>$(DefineConstants);PublishDir=$(PublishDir);NoRuntime=$(NoRuntime)</DefineConstants>
+    <DefineConstants>$(DefineConstants);PublishDir=$(PublishDir);NoRuntime=$(NoRuntime);DisplayVersion=$(ProductVersion)</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

@@ -142,6 +142,7 @@
 | `HKCU\Software\Classes\Directory\Background\shellex\ContextMenuHandlers\DeskNook` | 同上 | 同上 |
 | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 值 `DeskNook` | `"<exe 完整路径>"`（带引号） | `AutoStart` |
 | `HKLM\Software\DeskNook` 值 `StartMenuShortcut` / `DesktopShortcut`（DWORD=1） | MSI 快捷方式组件的 KeyPath，无运行时用途 | `installer/Package.wxs` |
+| `HKLM\Software\DeskNook` 值 `InstallDir`（字符串） | 安装目录（`[INSTALLFOLDER]`），1.0.1 起由 MSI 写入、卸载时随组件删除；升级时 `RegistrySearch` 读回作为默认安装目录 | `installer/Package.wxs` |
 | `HKCU\Software\DeskNookTests` | 仅单测使用（`AutoStartTests` 的专用 Run 键），测试后删除 | 测试 |
 | 只读：`HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` 的 `Hidden`、`ShowSuperHidden` | 决定桌面枚举是否包含隐藏/超级隐藏项 | 读取方 `DesktopItemSource` |
 

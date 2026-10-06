@@ -30,18 +30,22 @@
     <Property Id="AUTOSTART" Value="1" Secure="yes" />
     <Property Id="DESKTOPSHORTCUT" Value="1" Secure="yes" />
 
-    <!-- 升级时沿用旧版安装目录：按主程序组件 GUID 定位已安装的 DeskNook.exe 所在目录（1.0.0 未记录安装目录，所以不用注册表） -->
+    <!-- 升级时默认沿用上次的安装目录：从 1.0.1 起安装时写入 HKLM\Software\DeskNook\InstallDir（1.0.0 未记录，升级 1.0.0 时用默认目录） -->
     <Property Id="INSTALLFOLDER" Secure="yes">
-      <ComponentSearch Id="FindInstalledDeskNook" Guid="{16EB3D7D-1A37-5ADD-B757-D967A8BFEC9B}" Type="directory" />
+      <RegistrySearch Id="FindInstallDir" Root="HKLM" Key="Software\DeskNook" Name="InstallDir" Type="raw" Bitness="always64" />
     </Property>
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="DeskNook">
 
         <!-- 主程序单独成组件（快捷方式与自定义动作都引用它），其余发布文件用 Files 通配收集 -->
-        <!-- 固定 GUID = 1.0.0 起的自动生成值；升级时上面的 ComponentSearch 用它找旧安装目录，不要改 -->
-        <Component Id="DeskNookExe" Guid="{16EB3D7D-1A37-5ADD-B757-D967A8BFEC9B}" Bitness="always64">
+        <Component Id="DeskNookExe" Bitness="always64">
           <File Id="DeskNook.exe" Source="$(PublishDir)DeskNook.exe" KeyPath="yes" />
+        </Component>
+
+        <!-- 记录安装目录，供以后升级时作为默认目录（卸载时随组件删除） -->
+        <Component Id="InstallDirRegistry" Bitness="always64">
+          <RegistryValue Root="HKLM" Key="Software\DeskNook" Name="InstallDir" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
         </Component>
 
       </Directory>
@@ -73,6 +77,7 @@
 
     <Feature Id="Main" Title="桌面整理" Level="1" AllowAdvertise="no" AllowAbsent="no">
       <ComponentRef Id="DeskNookExe" />
+      <ComponentRef Id="InstallDirRegistry" />
       <ComponentRef Id="StartMenuShortcut" />
       <ComponentRef Id="DesktopShortcut" />
       <ComponentGroupRef Id="PublishFiles" />
@@ -143,12 +148,12 @@
         <Control Id="Title" Type="Text" X="15" Y="6" Width="300" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}安装选项" HideCondition="WIX_UPGRADE_DETECTED" />
         <Control Id="TitleUpgrade" Type="Text" X="15" Y="6" Width="300" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}升级桌面整理" Hidden="yes" ShowCondition="WIX_UPGRADE_DETECTED" />
         <Control Id="Description" Type="Text" X="25" Y="23" Width="340" Height="15" Transparent="yes" NoPrefix="yes" Text="选择需要的附加选项。" HideCondition="WIX_UPGRADE_DETECTED" />
-        <Control Id="DescriptionUpgrade" Type="Text" X="25" Y="23" Width="340" Height="15" Transparent="yes" NoPrefix="yes" Text="将升级到 v[ProductVersion]。" Hidden="yes" ShowCondition="WIX_UPGRADE_DETECTED" />
+        <Control Id="DescriptionUpgrade" Type="Text" X="25" Y="23" Width="340" Height="15" Transparent="yes" NoPrefix="yes" Text="将升级到 v$(DisplayVersion)。" Hidden="yes" ShowCondition="WIX_UPGRADE_DETECTED" />
         <Control Id="AutostartCheck" Type="CheckBox" X="30" Y="65" Width="300" Height="18" Property="AUTOSTART" CheckBoxValue="1" Text="开机自动启动桌面整理" HideCondition="WIX_UPGRADE_DETECTED" />
         <Control Id="AutostartUpgradeNote" Type="Text" X="30" Y="65" Width="300" Height="18" Transparent="yes" NoPrefix="yes" Text="升级安装将保留当前的开机自启设置" Hidden="yes" ShowCondition="WIX_UPGRADE_DETECTED" />
         <Control Id="DesktopShortcutCheck" Type="CheckBox" X="30" Y="95" Width="300" Height="18" Property="DESKTOPSHORTCUT" CheckBoxValue="1" Text="创建桌面快捷方式" />
         <Control Id="StartMenuNote" Type="Text" X="30" Y="135" Width="300" Height="18" Transparent="yes" NoPrefix="yes" Text="开始菜单快捷方式将始终创建。" />
-        <Control Id="UpgradeNote" Type="Text" X="30" Y="165" Width="300" Height="50" Transparent="yes" NoPrefix="yes" Text="检测到已安装的旧版本。继续后会先卸载旧版本，再安装 v[ProductVersion]；安装位置保持不变：[INSTALLFOLDER]。设置、格子布局与桌面文件都会保留。" Hidden="yes" ShowCondition="WIX_UPGRADE_DETECTED" />
+        <Control Id="UpgradeNote" Type="Text" X="30" Y="165" Width="300" Height="50" Transparent="yes" NoPrefix="yes" Text="检测到已安装的旧版本。继续后会先卸载旧版本，再安装 v$(DisplayVersion) 到：[INSTALLFOLDER]。设置、格子布局与桌面文件都会保留。" Hidden="yes" ShowCondition="WIX_UPGRADE_DETECTED" />
       </Dialog>
 
       <Publish Dialog="BrowseDlg" Control="OK" Event="DoAction" Value="WixUIValidatePath_X64" Order="3" Condition="NOT WIXUI_DONTVALIDATEPATH" />
@@ -157,8 +162,7 @@
       <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" />
       <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchApplication" Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed" />
 
-      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
-      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="OptionsDlg" Condition="NOT Installed AND WIX_UPGRADE_DETECTED" />
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Condition="NOT Installed" />
       <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Condition="Installed AND PATCH" />
 
       <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" />
@@ -169,8 +173,7 @@
       <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Property="_BrowseProperty" Value="[WIXUI_INSTALLDIR]" Order="1" />
       <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Event="SpawnDialog" Value="BrowseDlg" Order="2" />
 
-      <Publish Dialog="OptionsDlg" Control="Back" Event="NewDialog" Value="InstallDirDlg" Condition="NOT WIX_UPGRADE_DETECTED" />
-      <Publish Dialog="OptionsDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Condition="WIX_UPGRADE_DETECTED" />
+      <Publish Dialog="OptionsDlg" Control="Back" Event="NewDialog" Value="InstallDirDlg" />
       <Publish Dialog="OptionsDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" />
 
       <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="OptionsDlg" Order="1" Condition="NOT Installed" />
