@@ -51,14 +51,14 @@ try {
         "box1 移到 $($n1.Rect.X),$($n1.Rect.Y)"
     }
 
-    Invoke-Test 'A04 拖右下角缩放（吸附网格）' {
+    Invoke-Test 'A04 拖右下角缩放（逐像素）' {
         $bx = (Get-Boxes)[0]
         $cx = [int]($bx.Rect.X + $bx.Rect.W - 2); $cy = [int]($bx.Rect.Y + $bx.Rect.H - 2)
         Drag-Mouse-Shot $cx $cy ($cx + 80) ($cy + 110) 'b-a04-resizing' @(900, 200, 1100, 900)
         Wait-Saved
         $n = (Get-Boxes)[0]
-        Assert-True ($n.Rect.W -eq ($bx.Rect.W + 75)) "宽度应 +75：$($bx.Rect.W) → $($n.Rect.W)"
-        Assert-True ($n.Rect.H -eq ($bx.Rect.H + 100)) "高度应 +100：$($bx.Rect.H) → $($n.Rect.H)"
+        Assert-True ($n.Rect.W -eq ($bx.Rect.W + 80)) "宽度应 +80：$($bx.Rect.W) → $($n.Rect.W)"
+        Assert-True ($n.Rect.H -eq ($bx.Rect.H + 110)) "高度应 +110：$($bx.Rect.H) → $($n.Rect.H)"
         Save-Screen -Name b-a04-resized -Rect @(900, 200, 1100, 900) | Out-Null
         "尺寸 $($bx.Rect.W)x$($bx.Rect.H) → $($n.Rect.W)x$($n.Rect.H)"
     }

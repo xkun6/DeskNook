@@ -70,6 +70,10 @@ internal sealed class BoxControl : Canvas
     private BoxRect _startRect = new();
     private ResizeEdge _edge;
     private double _thumbGrab;
+    private IReadOnlyList<BoxRect> _dragOthers = Array.Empty<BoxRect>();
+    private Size _dragWork;
+    private Point? _pendingPos;              // 合帧：每帧最多处理一次最新鼠标位置
+    private bool _renderHooked;
 
     private TextBox? _titleEdit;
     private bool _titleEditDone;
@@ -210,8 +214,11 @@ internal sealed class BoxControl : Canvas
         _collapseGlyph.Text = Box.Collapsed ? "" : "";
         _title.MaxWidth = Math.Max(20, r.W - 12 - ButtonSize * 2 - 22);
         _lock.Visibility = Box.Locked ? Visibility.Visible : Visibility.Collapsed;
-        _title.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        SetLeft(_lock, 12 + Math.Min(_title.DesiredSize.Width, _title.MaxWidth) + 6);
+        if (_mode != Mode.Move)   // 移动时标题宽度不变
+        {
+            _title.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            SetLeft(_lock, 12 + Math.Min(_title.DesiredSize.Width, _title.MaxWidth) + 6);
+        }
 
         _content.Visibility = collapsedNow ? Visibility.Collapsed : Visibility.Visible;
         var vh = Math.Max(0, r.H - BoxGeometry.ChromeH);
@@ -249,6 +256,7 @@ internal sealed class BoxControl : Canvas
         var cols = Cols;
         _scroll = Math.Clamp(_scroll, 0, MaxScroll);
         var offX = OffsetX;
+        if (_mode == Mode.Move) { UpdateThumb(); return; }   // 移动时图标相对格子不变
         for (var i = 0; i < _controls.Count; i++)
         {
             var (c, r) = BoxGeometry.CellOfIndex(i, cols);
@@ -404,6 +412,10 @@ internal sealed class BoxControl : Canvas
         _startMouse = e.GetPosition(_surface);
         _startRect = _rect.Clone();
         _preview = _rect.Clone();
+        _dragWork = _surface.WorkSize;
+        _dragOthers = _surface.OtherRects(Box.Id);
+        _pendingPos = null;
+        if (!_renderHooked) { CompositionTarget.Rendering += OnRendering; _renderHooked = true; }
         _surface.FocusSurface();
         CaptureMouse();
         UpdateChrome();
@@ -420,15 +432,21 @@ internal sealed class BoxControl : Canvas
         }
         if (e.LeftButton != MouseButtonState.Pressed) { EndDrag(commit: false); return; }
 
-        var pos = e.GetPosition(_surface);
         if (_mode == Mode.Thumb) { DragThumb(e.GetPosition(this)); return; }
+        _pendingPos = e.GetPosition(_surface);   // 下一帧渲染时统一处理最新位置
+    }
 
+    private void OnRendering(object? sender, EventArgs e) => ProcessPending();
+
+    private void ProcessPending()
+    {
+        if (_pendingPos is not { } pos || _mode is not (Mode.Move or Mode.Resize)) return;
+        _pendingPos = null;
         double dx = pos.X - _startMouse.X, dy = pos.Y - _startMouse.Y;
-        var work = _surface.WorkSize;
-        var others = _surface.OtherRects(Box.Id);
+        var scale = _surface.Scale;
         SnapResult res = _mode == Mode.Move
-            ? BoxGeometry.SnapMove(new BoxRect(_startRect.X + dx, _startRect.Y + dy, _startRect.W, _startRect.H), others, work.Width, work.Height, _c.CellW, _c.CellH)
-            : BoxGeometry.SnapResize(_startRect, _edge, dx, dy, others, work.Width, work.Height, _c.CellW, _c.CellH);
+            ? BoxGeometry.SnapMove(new BoxRect(_startRect.X + dx, _startRect.Y + dy, _startRect.W, _startRect.H), _dragOthers, _dragWork.Width, _dragWork.Height, scale)
+            : BoxGeometry.SnapResize(_startRect, _edge, dx, dy, _dragOthers, _dragWork.Width, _dragWork.Height, _c.CellW, _c.CellH, scale);
         _preview = res.Rect;
         Relayout();
         _surface.ShowGuides(res.Guides);
@@ -448,6 +466,9 @@ internal sealed class BoxControl : Canvas
 
     private void EndDrag(bool commit)
     {
+        if (commit) ProcessPending();
+        _pendingPos = null;
+        if (_renderHooked) { CompositionTarget.Rendering -= OnRendering; _renderHooked = false; }
         var mode = _mode;
         var preview = _preview;
         _mode = Mode.None;

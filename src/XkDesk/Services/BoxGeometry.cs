@@ -94,82 +94,89 @@ public static class BoxGeometry
 
     // ------------------------------------------------------------ 移动吸附
 
-    private static double SnapAxis(double raw, double size, double cell, double workSize, IEnumerable<(double Lo, double Hi)> others)
+    /// <summary>把 DIP 值取整到整数物理像素（scale 为 DPI 缩放；&lt;=0 时不取整）。</summary>
+    public static double PixelSnap(double v, double scale) => scale > 0 ? Math.Round(v * scale, MidpointRounding.AwayFromZero) / scale : v;
+
+    /// <summary>在 raw 附近 SnapThreshold 内找最近的候选位置；没有则返回 raw。</summary>
+    private static double SnapNear(double raw, IEnumerable<double> candidates)
     {
-        var best = Math.Round(raw / cell, MidpointRounding.AwayFromZero) * cell;
+        var best = raw;
         var bestD = double.MaxValue;
-        void Try(double cand)
+        foreach (var cand in candidates)
         {
             var d = Math.Abs(cand - raw);
             if (d <= SnapThreshold && d < bestD) { bestD = d; best = cand; }
         }
-        Try(0);
-        Try(workSize - size);
-        foreach (var (lo, hi) in others)
-        {
-            Try(lo);          // 左边对左边
-            Try(hi);          // 左边对右边
-            Try(lo - size);   // 右边对左边
-            Try(hi - size);   // 右边对右边
-        }
-        return Math.Clamp(best, 0, Math.Max(0, workSize - size));
+        return best;
     }
 
-    /// <summary>移动：未命中边缘吸附时对齐到网格；靠近其他格子/屏幕边缘（阈值内）则吸附到边缘。</summary>
-    public static SnapResult SnapMove(BoxRect raw, IReadOnlyList<BoxRect> others, double workW, double workH, double cellW, double cellH)
+    private static double SnapAxis(double raw, double size, double workSize, IReadOnlyList<(double Lo, double Hi)> others, double scale)
     {
-        var x = SnapAxis(raw.X, raw.W, cellW, workW, others.Select(o => (o.X, o.Right)));
-        var y = SnapAxis(raw.Y, raw.H, cellH, workH, others.Select(o => (o.Y, o.Bottom)));
+        IEnumerable<double> Cands()
+        {
+            yield return 0;
+            yield return workSize - size;
+            foreach (var (lo, hi) in others)
+            {
+                yield return lo;          // 左边对左边
+                yield return hi;          // 左边对右边
+                yield return lo - size;   // 右边对左边
+                yield return hi - size;   // 右边对右边
+            }
+        }
+        var best = SnapNear(raw, Cands());
+        return PixelSnap(Math.Clamp(best, 0, Math.Max(0, workSize - size)), scale);
+    }
+
+    /// <summary>移动：自由跟手（按设备像素取整）；靠近其他格子/屏幕边缘（阈值内）则吸附到边缘。</summary>
+    public static SnapResult SnapMove(BoxRect raw, IReadOnlyList<BoxRect> others, double workW, double workH, double scale = 1)
+    {
+        var xs = others.Select(o => (o.X, o.Right)).ToList();
+        var ys = others.Select(o => (o.Y, o.Bottom)).ToList();
+        var x = SnapAxis(raw.X, raw.W, workW, xs, scale);
+        var y = SnapAxis(raw.Y, raw.H, workH, ys, scale);
         var r = new BoxRect(x, y, raw.W, raw.H);
         return new SnapResult(r, FindGuides(r, others, workW, workH));
     }
 
-    /// <summary>缩放：按格子步长吸附；Left/Top 边移动时保持对侧边不动；有最小尺寸并夹到工作区内。</summary>
+    /// <summary>
+    /// 缩放：被拖动的边逐像素跟手，阈值内吸附到屏幕/其他格子的边；Left/Top 拖动时对侧边不动；
+    /// 有最小尺寸（MinCols×cellW、HeightFor(MinRows)）并夹到工作区内。
+    /// </summary>
     public static SnapResult SnapResize(BoxRect start, ResizeEdge edge, double dx, double dy,
-        IReadOnlyList<BoxRect> others, double workW, double workH, double cellW, double cellH)
+        IReadOnlyList<BoxRect> others, double workW, double workH, double cellW, double cellH, double scale = 1)
     {
-        var cols0 = Math.Max(MinCols, (int)Math.Round(start.W / cellW));
-        var rows0 = Math.Max(MinRows, (int)Math.Round((start.H - ChromeH) / cellH));
-        var dCols = (int)Math.Round(dx / cellW, MidpointRounding.AwayFromZero);
-        var dRows = (int)Math.Round(dy / cellH, MidpointRounding.AwayFromZero);
+        var minW = MinCols * cellW;
+        var minH = HeightFor(MinRows, cellH);
+        double left = start.X, right = start.Right, top = start.Y, bottom = start.Bottom;
 
-        var x = start.X;
-        var y = start.Y;
-        var cols = cols0;
-        var rows = rows0;
+        IEnumerable<double> XCands() { yield return 0; yield return workW; foreach (var o in others) { yield return o.X; yield return o.Right; } }
+        IEnumerable<double> YCands() { yield return 0; yield return workH; foreach (var o in others) { yield return o.Y; yield return o.Bottom; } }
 
-        if (edge.HasFlag(ResizeEdge.Right)) cols = cols0 + dCols;
-        if (edge.HasFlag(ResizeEdge.Left)) { cols = cols0 - dCols; }
-        if (edge.HasFlag(ResizeEdge.Bottom)) rows = rows0 + dRows;
-        if (edge.HasFlag(ResizeEdge.Top)) { rows = rows0 - dRows; }
-
-        cols = Math.Max(MinCols, cols);
-        rows = Math.Max(MinRows, rows);
-
-        var rightFixed = start.X + cols0 * cellW;
-        var bottomFixed = start.Y + HeightFor(rows0, cellH);
-        if (edge.HasFlag(ResizeEdge.Left)) x = rightFixed - cols * cellW;
-        if (edge.HasFlag(ResizeEdge.Top)) y = bottomFixed - HeightFor(rows, cellH);
-
-        // 夹到工作区内
-        if (x < 0)
+        if (edge.HasFlag(ResizeEdge.Right))
         {
-            if (edge.HasFlag(ResizeEdge.Left)) cols -= (int)Math.Ceiling(-x / cellW - Eps);
-            x = edge.HasFlag(ResizeEdge.Left) ? rightFixed - cols * cellW : Math.Max(0, x);
+            right = SnapNear(start.Right + dx, XCands());
+            right = Math.Max(Math.Min(right, workW), left + minW);
         }
-        if (y < 0)
+        if (edge.HasFlag(ResizeEdge.Left))
         {
-            if (edge.HasFlag(ResizeEdge.Top)) rows -= (int)Math.Ceiling(-y / cellH - Eps);
-            y = edge.HasFlag(ResizeEdge.Top) ? bottomFixed - HeightFor(Math.Max(MinRows, rows), cellH) : Math.Max(0, y);
+            left = SnapNear(start.X + dx, XCands());
+            left = Math.Max(0, Math.Min(left, right - minW));
         }
-        cols = Math.Max(MinCols, cols);
-        rows = Math.Max(MinRows, rows);
-        var maxCols = Math.Max(MinCols, (int)Math.Floor((workW - x) / cellW + Eps));
-        var maxRows = Math.Max(MinRows, (int)Math.Floor((workH - y - ChromeH) / cellH + Eps));
-        cols = Math.Min(cols, maxCols);
-        rows = Math.Min(rows, maxRows);
+        if (edge.HasFlag(ResizeEdge.Bottom))
+        {
+            bottom = SnapNear(start.Bottom + dy, YCands());
+            bottom = Math.Max(Math.Min(bottom, workH), top + minH);
+        }
+        if (edge.HasFlag(ResizeEdge.Top))
+        {
+            top = SnapNear(start.Y + dy, YCands());
+            top = Math.Max(0, Math.Min(top, bottom - minH));
+        }
 
-        var r = new BoxRect(x, y, cols * cellW, HeightFor(rows, cellH));
+        left = PixelSnap(left, scale); right = PixelSnap(right, scale);
+        top = PixelSnap(top, scale); bottom = PixelSnap(bottom, scale);
+        var r = new BoxRect(left, top, right - left, bottom - top);
         return new SnapResult(r, FindGuides(r, others, workW, workH));
     }
 

@@ -168,8 +168,11 @@ internal sealed class DesktopSurface : Canvas
         return (Math.Clamp(col, 0, g.Cols - 1), Math.Clamp(row, 0, g.Rows - 1));
     }
 
+    private int _rebuildCount;
+
     private void Rebuild()
     {
+        Log.Info($"桌面重建 #{++_rebuildCount}（{_monitor.DeviceName}）");
         var freeItems = _c.ItemsOn(_monitor.DeviceName).ToDictionary(i => i.Key, StringComparer.OrdinalIgnoreCase);
         var boxes = _c.BoxesOn(_monitor.DeviceName).ToList();
         var boxItems = boxes.ToDictionary(b => b.Id, b => _c.BoxItems(b));
@@ -359,6 +362,9 @@ internal sealed class DesktopSurface : Canvas
                              : new Size(g.WorkWidth / g.Scale, g.WorkHeight / g.Scale);
         }
     }
+
+    /// <summary>本显示器 DPI 缩放（DIP→物理像素）。</summary>
+    public double Scale => _monitor.Scale;
 
     /// <summary>本显示器上其他格子的当前矩形（相对工作区）。</summary>
     public IReadOnlyList<BoxRect> OtherRects(string boxId) =>

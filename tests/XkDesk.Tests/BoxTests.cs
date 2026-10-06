@@ -252,50 +252,61 @@ public class BoxLayoutTests
     // ---------------------------------------------------------------- 吸附 / 对齐
 
     [Fact]
-    public void 移动_对齐网格()
+    public void 移动_无吸附时逐像素跟手()
     {
-        var raw = new BoxRect(80, 130, 300, 236);
-        var r = BoxGeometry.SnapMove(raw, Array.Empty<BoxRect>(), 1000, 800, 75, 100).Rect;
-        Assert.Equal((75, 100), (r.X, r.Y));
+        var raw = new BoxRect(123.4, 230.6, 300, 236);
+        var r = BoxGeometry.SnapMove(raw, Array.Empty<BoxRect>(), 1000, 800).Rect;
+        Assert.Equal((123, 231), (r.X, r.Y)); // 只对齐到物理像素，不是 75/100 的网格倍数
+        var free = BoxGeometry.SnapMove(raw, Array.Empty<BoxRect>(), 1000, 800, 0).Rect;
+        Assert.Equal((123.4, 230.6), (free.X, free.Y));
+        var r2 = BoxGeometry.SnapMove(raw, Array.Empty<BoxRect>(), 1000, 800, 1.25).Rect; // 取整到物理像素
+        Assert.Equal(Math.Round(123.4 * 1.25) / 1.25, r2.X, 9);
+        Assert.Equal(Math.Round(230.6 * 1.25) / 1.25, r2.Y, 9);
         Assert.Equal((300, 236), (r.W, r.H));
     }
 
     [Fact]
     public void 移动_靠近屏幕边缘吸附并出辅助线()
     {
-        var res = BoxGeometry.SnapMove(new BoxRect(4, 3, 300, 236), Array.Empty<BoxRect>(), 1000, 800, 75, 100);
+        var res = BoxGeometry.SnapMove(new BoxRect(4, 3, 300, 236), Array.Empty<BoxRect>(), 1000, 800);
         Assert.Equal((0, 0), (res.Rect.X, res.Rect.Y));
         Assert.Contains(res.Guides, g => g.Vertical && g.Pos == 0);
         Assert.Contains(res.Guides, g => !g.Vertical && g.Pos == 0);
+        // 超过阈值不吸附
+        var far = BoxGeometry.SnapMove(new BoxRect(9, 20, 300, 236), Array.Empty<BoxRect>(), 1000, 800);
+        Assert.Equal((9, 20), (far.Rect.X, far.Rect.Y));
+        Assert.Empty(far.Guides);
     }
 
     [Fact]
-    public void 移动_靠近其他格子边缘吸附_非网格对齐的边()
+    public void 移动_靠近其他格子边缘吸附_阈值内外()
     {
-        // 另一个格子左边在 x=203（不在网格上）：本格子左边（207）在阈值内 → 贴齐 203，并出竖直辅助线
         var other = new BoxRect(203, 400, 300, 236);
-        var res = BoxGeometry.SnapMove(new BoxRect(207, 10, 300, 236), new[] { other }, 1000, 800, 75, 100);
+        var res = BoxGeometry.SnapMove(new BoxRect(207, 100, 300, 236), new[] { other }, 1000, 800);
         Assert.Equal(203, res.Rect.X);
         Assert.Contains(res.Guides, g => g.Vertical && Math.Abs(g.Pos - 203) < 0.5);
-        Assert.Equal(0, res.Rect.Y); // y 方向离 other 很远，对齐网格
+        Assert.Equal(100, res.Rect.Y); // y 方向离 other 很远，保持原值
+
+        var out10 = BoxGeometry.SnapMove(new BoxRect(213, 100, 300, 236), new[] { other }, 1000, 800);
+        Assert.Equal(213, out10.Rect.X);
     }
 
     [Fact]
     public void 移动_夹在工作区内()
     {
-        var res = BoxGeometry.SnapMove(new BoxRect(990, 790, 300, 236), Array.Empty<BoxRect>(), 1000, 800, 75, 100).Rect;
+        var res = BoxGeometry.SnapMove(new BoxRect(990, 790, 300, 236), Array.Empty<BoxRect>(), 1000, 800).Rect;
         Assert.Equal(700, res.X);
         Assert.Equal(800 - 236, res.Y);
     }
 
     [Fact]
-    public void 缩放_按格子步长_右下角()
+    public void 缩放_逐像素_右下角()
     {
         var start = new BoxRect(75, 100, 300, BoxGeometry.HeightFor(2, 100));
-        var r = BoxGeometry.SnapResize(start, ResizeEdge.Right | ResizeEdge.Bottom, 80, 120, Array.Empty<BoxRect>(), 1000, 800, 75, 100).Rect;
+        var r = BoxGeometry.SnapResize(start, ResizeEdge.Right | ResizeEdge.Bottom, 7, 19, Array.Empty<BoxRect>(), 1000, 800, 75, 100).Rect;
         Assert.Equal((75, 100), (r.X, r.Y));
-        Assert.Equal(5 * 75, r.W);
-        Assert.Equal(BoxGeometry.HeightFor(3, 100), r.H);
+        Assert.Equal(307, r.W);
+        Assert.Equal(BoxGeometry.HeightFor(2, 100) + 19, r.H);
     }
 
     [Fact]
@@ -303,11 +314,12 @@ public class BoxLayoutTests
     {
         var start = new BoxRect(150, 200, 300, BoxGeometry.HeightFor(2, 100));
         var right = start.Right; var bottom = start.Bottom;
-        var r = BoxGeometry.SnapResize(start, ResizeEdge.Left | ResizeEdge.Top, -80, -100, Array.Empty<BoxRect>(), 1000, 800, 75, 100).Rect;
+        var r = BoxGeometry.SnapResize(start, ResizeEdge.Left | ResizeEdge.Top, -33, -41, Array.Empty<BoxRect>(), 1000, 800, 75, 100).Rect;
         Assert.Equal(right, r.Right);
         Assert.Equal(bottom, r.Bottom);
-        Assert.Equal(5 * 75, r.W);
-        Assert.Equal(BoxGeometry.HeightFor(3, 100), r.H);
+        Assert.Equal(117, r.X);
+        Assert.Equal(159, r.Y);
+        Assert.Equal(333, r.W);
 
         var small = BoxGeometry.SnapResize(start, ResizeEdge.Right | ResizeEdge.Bottom, -9999, -9999, Array.Empty<BoxRect>(), 1000, 800, 75, 100).Rect;
         Assert.Equal(BoxGeometry.MinCols * 75, small.W);
@@ -323,7 +335,36 @@ public class BoxLayoutTests
     {
         var start = new BoxRect(675, 100, 300, BoxGeometry.HeightFor(2, 100));
         var r = BoxGeometry.SnapResize(start, ResizeEdge.Right, 9999, 0, Array.Empty<BoxRect>(), 1000, 800, 75, 100).Rect;
-        Assert.True(r.Right <= 1000);
+        Assert.Equal(1000, r.Right);
+        var l = BoxGeometry.SnapResize(start, ResizeEdge.Left | ResizeEdge.Top, -9999, -9999, Array.Empty<BoxRect>(), 1000, 800, 75, 100).Rect;
+        Assert.Equal((0, 0), (l.X, l.Y));
+    }
+
+    [Fact]
+    public void 缩放_拖动边靠近其他格子边缘吸附()
+    {
+        var start = new BoxRect(100, 100, 300, BoxGeometry.HeightFor(2, 100));
+        var other = new BoxRect(520, 50, 200, 200);
+        var snap = BoxGeometry.SnapResize(start, ResizeEdge.Right, 124, 0, new[] { other }, 1000, 800, 75, 100);
+        Assert.Equal(520, snap.Rect.Right);
+        Assert.Contains(snap.Guides, g => g.Vertical && Math.Abs(g.Pos - 520) < 0.5);
+        var free = BoxGeometry.SnapResize(start, ResizeEdge.Right, 111, 0, new[] { other }, 1000, 800, 75, 100);
+        Assert.Equal(511, free.Rect.Right);
+    }
+
+    [Fact]
+    public void 非整格宽度_列数与插入位置()
+    {
+        Assert.Equal(4, BoxGeometry.Cols(307, 75));
+        Assert.Equal(4, BoxGeometry.Cols(374, 75));
+        Assert.Equal(5, BoxGeometry.Cols(375, 75));
+        // 内容区居中偏移后的内容坐标：x 小于 0 夹到第 0 列，超出夹到最后一列
+        Assert.Equal(0, BoxGeometry.InsertIndexAt(-5, 10, 4, 75, 100, 6));
+        Assert.Equal(6, BoxGeometry.InsertIndexAt(310, 150, 4, 75, 100, 6));
+        // 非整格矩形覆盖的格子：x 100..407 -> 列 1..5
+        var set = new HashSet<(int, int)>();
+        BoxGeometry.AddCovered(set, new BoxRect(100, 0, 307, 136), 75, 100);
+        Assert.Contains((1, 0), set); Assert.Contains((5, 1), set); Assert.DoesNotContain((6, 0), set);
     }
 
     [Fact]

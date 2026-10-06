@@ -182,6 +182,7 @@ function Start-BoxTest {
     param([string[]]$Files = @('a', 'b', 'c'), [switch]$NoStart)
     Stop-XkDesk | Out-Null
     Backup-Layout
+    Remove-Item $Script:LayoutPath -Force -ErrorAction SilentlyContinue   # 从空布局开始（原布局已备份，结束时还原）
     Clear-TestArtifacts
     foreach ($f in $Files) { New-TestFile -Name "xk-test-$f.txt" -Content "xk-test $f" | Out-Null }
     Wait-Ms 1000
