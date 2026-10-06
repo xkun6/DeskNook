@@ -139,16 +139,6 @@ function Normalize-MenuTexts {
     return ,@($out.ToArray())
 }
 
-# 在已弹出的菜单里点击项（Path 依次为各级文本）
-function Click-MenuPath {
-    param([Parameter(Mandatory)][string[]]$Path, [int]$SettleMs = 500)
-    foreach ($seg in $Path) {
-        $m = Find-MenuItem $seg -TimeoutMs 4000
-        if (-not $m) { Press-Key Escape; Press-Key Escape; throw "找不到菜单项：$seg（当前：$((Get-MenuTexts) -join ' | ')）" }
-        Click-Mouse $m.X $m.Y -Delay $SettleMs
-    }
-}
-
 # 左右拼接两张截图的同一区域，便于对比
 function New-SideBySide {
     param([string]$Left, [string]$Right, [string]$Dst, [int]$X, [int]$Y, [int]$W, [int]$H, [string]$LabelL = '', [string]$LabelR = '')

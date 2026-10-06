@@ -1,5 +1,5 @@
 ﻿. $PSScriptRoot\box-lib.ps1
-# 阶段 2 测试 B：移动到格子/移出格子菜单、格子内原生菜单、用选中项新建格子、映射格子（同步/菜单/拖放）、解散
+# 阶段 2 测试 B：移动到格子/移出格子菜单、格子内原生菜单、整理至新格子、映射格子（同步/菜单/拖放）、解散
 Start-BoxTest -Files @('a', 'b', 'c', 'd')
 $KA = Key-Path 'xk-test-a.txt'; $KB = Key-Path 'xk-test-b.txt'; $KC = Key-Path 'xk-test-c.txt'; $KD = Key-Path 'xk-test-d.txt'
 New-Item -ItemType Directory -Path $Script:MapDir -Force | Out-Null
@@ -7,7 +7,7 @@ Set-Content -Path (Join-Path $Script:MapDir 'xk-test-m1.txt') -Value 'm1'
 Set-Content -Path (Join-Path $Script:MapDir 'xk-test-m2.txt') -Value 'm2'
 try {
     Invoke-Test 'B01 新建空格子，用「移动到格子」菜单把图标移入' {
-        Click-ContextMenu 1500 300 -Path @('新建格子')
+        Click-ContextMenu 1500 300 -Path @('xk-desk ▸ 新建格子')
         Assert-True (Wait-Layout { param($l) @($l.Boxes).Count -eq 1 }) '没有新格子'
         Wait-Saved
         $p = Get-IconCenter 'xk-test-a.txt'
@@ -42,10 +42,10 @@ try {
         "原生菜单项齐全（$($texts.Count) 项），移出后回到自由区"
     }
 
-    Invoke-Test 'B03 选中多个桌面图标 → 用选中项新建格子' {
+    Invoke-Test 'B03 选中多个桌面图标 → 整理至新格子' {
         $pa = Get-IconCenter 'xk-test-a.txt'; $pb = Get-IconCenter 'xk-test-b.txt'
         Click-Mouse $pa.X $pa.Y; Click-Mouse $pb.X $pb.Y -Ctrl
-        Click-ContextMenu $pb.X $pb.Y -Path @('用选中项新建格子')
+        Click-ContextMenu $pb.X $pb.Y -Path @('整理至新格子')
         Assert-True (Wait-Layout { param($l) @($l.Boxes).Count -eq 2 }) '没有新格子'
         Wait-Saved
         $nb = (Get-Boxes)[1]
@@ -56,7 +56,7 @@ try {
     }
 
     Invoke-Test 'B04 新建映射格子（IFileOpenDialog 选目录）' {
-        Click-ContextMenu 1900 800 -Path @('新建映射格子')
+        Click-ContextMenu 1900 800 -Path @('xk-desk ▸ 新建映射格子')
         Wait-Ms 1500
         Save-Screen -Name b-b04-folder-dialog | Out-Null
         Type-Text $Script:MapDir; Wait-Ms 300; Press-Key Enter; Wait-Ms 1500

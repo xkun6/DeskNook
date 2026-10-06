@@ -119,7 +119,7 @@ try {
     Invoke-Test 'C01 整理前：撤销整理置灰、一键整理可用' {
         $p = Find-BlankCell
         Click-Mouse $p.X $p.Y -Button Right; Wait-Ms 700
-        $o = Find-MenuItem '一键整理'; $u = Find-MenuItem '撤销整理'
+        $o = Find-MenuItem '一键整理' -Exact; $x = Find-MenuItem 'xk-desk' -Exact; Assert-True ($null -ne $x) '菜单里没有 xk-desk 子菜单'; Click-Mouse $x.X $x.Y -Delay 600; $u = Find-MenuItem '撤销整理'
         Save-Screen -Name c-01-menu-initial | Out-Null
         Press-Key Escape; Press-Key Escape
         Assert-True ($o -and $u) '菜单里没有一键整理/撤销整理'
@@ -163,7 +163,7 @@ try {
     }
 
     Invoke-Test 'C03 撤销整理：布局恢复（格子消失、图标回自由区）' {
-        Right-ClickBlank @('撤销整理'); Wait-Ms 1200; Wait-Saved
+        Right-ClickBlank @('xk-desk ▸ 撤销整理'); Wait-Ms 1200; Wait-Saved
         Move-Mouse ($Screen.Width - 5) ($Screen.Height - 5) 300
         Save-Screen -Name c-03-undone | Out-Null
         $l = Read-Layout
@@ -183,11 +183,13 @@ try {
         Save-Screen -Name c-04-restarted | Out-Null
         $p = Find-BlankCell
         Click-Mouse $p.X $p.Y -Button Right; Wait-Ms 700
+        $x = Find-MenuItem 'xk-desk' -Exact; Assert-True ($null -ne $x) '菜单里没有 xk-desk 子菜单'
+        Click-Mouse $x.X $x.Y -Delay 600
         $u = Find-MenuItem '撤销整理'
         Save-Screen -Name c-04-menu-after-restart | Out-Null
         Press-Key Escape; Press-Key Escape
         Assert-True ($u -and (($u.State -band 3) -eq 0)) "重启后撤销整理应可用，State=$($u.State)"
-        Right-ClickBlank @('撤销整理'); Wait-Ms 1200; Wait-Saved
+        Right-ClickBlank @('xk-desk ▸ 撤销整理'); Wait-Ms 1200; Wait-Saved
         $l = Read-Layout
         Assert-True (@($l.Boxes).Count -eq $boxCount0) "撤销后格子数应为 $boxCount0，实际 $(@($l.Boxes).Count)"
         foreach ($n in ($Names + $DirName)) { Assert-True (Test-Free $n) "$n 没回到自由区" }
@@ -196,11 +198,12 @@ try {
     }
 
     Invoke-Test 'C05 设置窗口：打开、改规则（去掉 txt）、保存，整理结果随之变化' {
-        Right-ClickBlank @('xk-desk 设置')
+        Right-ClickBlank @('xk-desk ▸ xk-desk 设置')
         $w = Get-SettingsWindow
         Assert-True ($w -ne $null) '设置窗口没打开'
         Wait-Ms 800
         Save-Screen -Name c-05-settings | Out-Null
+        Click-Ui (Find-Ui $w 'TabRules'); Wait-Ms 600    # 设置窗口现为“常规 / 整理规则”两页，规则在第二页
         # 选中“文档”（第 3 项），把扩展名去掉 txt
         $items = $w.FindAll([System.Windows.Automation.TreeScope]::Descendants,
             (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::ListItem)))
@@ -228,10 +231,11 @@ try {
     }
 
     Invoke-Test 'C06 设置窗口：恢复默认、上下移动（不保存）' {
-        Right-ClickBlank @('xk-desk 设置')
+        Right-ClickBlank @('xk-desk ▸ xk-desk 设置')
         $w = Get-SettingsWindow
         Assert-True ($w -ne $null) '设置窗口没打开'
         Wait-Ms 600
+        Click-Ui (Find-Ui $w 'TabRules'); Wait-Ms 600
         Click-Ui (Find-Ui $w 'BtnReset'); Wait-Ms 500
         $items = $w.FindAll([System.Windows.Automation.TreeScope]::Descendants,
             (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::ListItem)))
@@ -246,7 +250,7 @@ try {
     }
 
     # 收尾前撤销最近一次整理（让布局回到整理前，便于肉眼核对）
-    try { Right-ClickBlank @('撤销整理'); Wait-Ms 1200; Wait-Saved } catch { }
+    try { Right-ClickBlank @('xk-desk ▸ 撤销整理'); Wait-Ms 1200; Wait-Saved } catch { }
 }
 finally {
     try { Press-Key Escape } catch { }

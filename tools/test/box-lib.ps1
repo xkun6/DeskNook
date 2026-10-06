@@ -88,19 +88,23 @@ namespace XkTest {
 '@
 }
 
-# 弹出的原生菜单里找菜单项（遍历所有可见 #32768 菜单窗口的 HMENU），返回中心点；找不到返回 $null
+# 弹出的菜单里找菜单项（遍历所有可见 #32768 菜单窗口的 HMENU；菜单由 explorer.exe 弹出时同样可读），返回中心点；找不到返回 $null。
+# 匹配：先找文本完全相等的项（去掉 &、(&X) 后），找不到再按通配符包含匹配（如 '新建映射格子' 可匹配 '新建映射格子…'）；-Exact 只做完全相等。
 function Find-MenuItem {
     param([Parameter(Mandatory)][string]$Text, [int]$TimeoutMs = 3000, [switch]$Exact)
     $deadline = (Get-Date).AddMilliseconds($TimeoutMs)
     do {
+        $exactHit = $null; $likeHit = $null
         foreach ($line in [XkTest.MenuApi]::Items()) {
             $p = $line.Split('|')
             $name = ($p[0] -replace '\(&.\)|&', '').Trim()
-            $hit = if ($Exact) { $name -eq $Text } else { $name -like "*$Text*" }
-            if ($name -and $hit -and [int]$p[3] -gt 0) {
-                return @{ X = [int]$p[1] + [int]([int]$p[3] / 2); Y = [int]$p[2] + [int]([int]$p[4] / 2); Name = $p[0]; State = [int64]$p[5] }
-            }
+            if (-not $name -or [int]$p[3] -le 0) { continue }
+            $hit = @{ X = [int]$p[1] + [int]([int]$p[3] / 2); Y = [int]$p[2] + [int]([int]$p[4] / 2); Name = $p[0]; State = [int64]$p[5] }
+            if ($name -eq $Text) { if (-not $exactHit) { $exactHit = $hit } }
+            elseif (-not $Exact -and $name -like "*$Text*") { if (-not $likeHit) { $likeHit = $hit } }
         }
+        if ($exactHit) { return $exactHit }
+        if ($likeHit) { return $likeHit }
         Start-Sleep -Milliseconds 150
     } while ((Get-Date) -lt $deadline)
     return $null
@@ -109,15 +113,26 @@ function Find-MenuItem {
 # 当前所有弹出菜单项文本（调试/断言用）
 function Get-MenuTexts { return @([XkTest.MenuApi]::Items() | ForEach-Object { ($_.Split('|')[0] -replace '\(&.\)|&', '').Trim() }) }
 
-# 右键点 (x,y) → 点击名为 Text 的菜单项（子菜单路径用数组，依次点击/悬停）
+# 路径式菜单选择：Path 为数组（@('xk-desk','新建格子')）或用 ▸ 分隔的字符串（'xk-desk ▸ 新建格子'）；
+# 在已弹出的菜单里依次点击各级（父级点击即展开子菜单）。统一入口，适用于 explorer.exe 弹出的菜单和 XkDesk 自己弹出的菜单。
+function Split-MenuPath {
+    param([Parameter(Mandatory)][string[]]$Path)
+    return @($Path | ForEach-Object { $_ -split '\s*▸\s*' } | Where-Object { $_ -ne '' })
+}
+function Click-MenuPath {
+    param([Parameter(Mandatory)][string[]]$Path, [int]$SettleMs = 500)
+    foreach ($seg in (Split-MenuPath $Path)) {
+        $m = Find-MenuItem $seg -TimeoutMs 4000
+        if (-not $m) { Press-Key Escape; Press-Key Escape; throw "找不到菜单项：$seg（当前：$((Get-MenuTexts) -join ' | ')）" }
+        Click-Mouse $m.X $m.Y -Delay $SettleMs
+    }
+}
+
+# 右键点 (x,y) → 按路径点击菜单项
 function Click-ContextMenu {
     param([int]$X, [int]$Y, [Parameter(Mandatory)][string[]]$Path, [int]$SettleMs = 700)
     Click-Mouse $X $Y -Button Right; Wait-Ms $SettleMs
-    foreach ($seg in $Path) {
-        $m = Find-MenuItem $seg
-        if (-not $m) { Press-Key Escape; Press-Key Escape; throw "找不到菜单项：$seg" }
-        Click-Mouse $m.X $m.Y; Wait-Ms 500
-    }
+    Click-MenuPath $Path
 }
 
 function Test-Free { return $true }
