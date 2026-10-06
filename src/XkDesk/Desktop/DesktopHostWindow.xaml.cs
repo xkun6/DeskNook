@@ -112,12 +112,13 @@ public partial class DesktopHostWindow : Window
 
     private void AttachAsOwner()
     {
-        Win32.SetWindowLongPtr(_hwnd, Win32.GWLP_HWNDPARENT, _desktop.Progman);
+        var owner = _desktop.DefViewParent;
+        Win32.SetWindowLongPtr(_hwnd, Win32.GWLP_HWNDPARENT, owner);
         ApplyBounds();
         Win32.SetWindowPos(_hwnd, Win32.HWND_BOTTOM, 0, 0, 0, 0, Win32.SWP_NOACTIVATE | Win32.SWP_NOMOVE | Win32.SWP_NOSIZE);
         _eventHook = Win32.SetWinEventHook(Win32.EVENT_SYSTEM_FOREGROUND, Win32.EVENT_SYSTEM_FOREGROUND,
             IntPtr.Zero, _winEventProc, 0, 0, Win32.WINEVENT_OUTOFCONTEXT);
-        Log.Info($"[{_monitor.DeviceName}] owner=Progman(0x{_desktop.Progman:X}) 已置底，WinEventHook=0x{_eventHook:X}");
+        Log.Info($"[{_monitor.DeviceName}] owner=0x{owner:X}({Win32.GetClassNameString(owner)}) 已置底，WinEventHook=0x{_eventHook:X}");
     }
 
     private void AttachAsChild()

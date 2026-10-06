@@ -39,7 +39,6 @@ internal static class Win32
     public const int WM_WINDOWPOSCHANGING = 0x0046;
     public const int WM_DISPLAYCHANGE = 0x007E;
     public const uint SMTO_NORMAL = 0x0000;
-    public const uint SPAWN_WORKERW = 0x052C;
 
     // WinEvent
     public const uint EVENT_SYSTEM_FOREGROUND = 0x0003;

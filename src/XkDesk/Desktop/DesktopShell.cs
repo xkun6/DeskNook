@@ -22,17 +22,11 @@ internal static class DesktopShell
     private static bool _hidden;
     private static IntPtr _lastListView;
 
-    /// <summary>查找桌面窗口；spawnWorkerW 为 true 时先向 Progman 发 0x052C 促使生成 WorkerW。</summary>
-    public static DesktopInfo FindDesktop(bool spawnWorkerW = true)
+    /// <summary>查找桌面窗口（不发送任何消息，不改变 Explorer 原生窗口结构）。</summary>
+    public static DesktopInfo FindDesktop()
     {
         var progman = Win32.FindWindow("Progman", null);
         if (progman == IntPtr.Zero) return default;
-
-        if (spawnWorkerW)
-        {
-            Win32.SendMessageTimeout(progman, Win32.SPAWN_WORKERW, (UIntPtr)0xD, (IntPtr)1, Win32.SMTO_NORMAL, 1000, out _);
-            Win32.SendMessageTimeout(progman, Win32.SPAWN_WORKERW, UIntPtr.Zero, IntPtr.Zero, Win32.SMTO_NORMAL, 1000, out _);
-        }
 
         // 先查 Progman 子窗口，再找含 DefView 的 WorkerW
         var defView = Win32.FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null);
@@ -82,7 +76,7 @@ internal static class DesktopShell
                 if (!_hidden) return;
                 _hidden = false;
 
-                var target = FindDesktop(spawnWorkerW: false).ListView;
+                var target = FindDesktop().ListView;
                 if (target == IntPtr.Zero && Win32.IsWindow(_lastListView)) target = _lastListView;
                 if (target != IntPtr.Zero) Win32.ShowWindow(target, Win32.SW_SHOW);
                 Log.Info($"已恢复系统桌面图标 ListView=0x{target:X}");

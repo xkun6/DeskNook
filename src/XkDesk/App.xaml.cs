@@ -148,8 +148,8 @@ public partial class App : Application
         {
             if (_exiting) { _reattachTimer?.Stop(); return; }
 
-            // 仅轮询，不发 0x052C，避免打扰尚未就绪的新 Explorer
-            if (DesktopShell.FindDesktop(spawnWorkerW: false).IsValid)
+            // 仅轮询查找
+            if (DesktopShell.FindDesktop().IsValid)
             {
                 _reattachTimer?.Stop();
                 if (!RebuildHosts("Explorer 重启后重挂"))
