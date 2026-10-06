@@ -46,7 +46,7 @@ WiX v5 生成的 per-machine MSI，提供两种：自带 .NET 运行时（self-c
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/build-installer.ps1   # 一次输出 4 个文件：含/不含运行时的 MSI 与便携版（见“发布”一节）
 ```
 
-版本号取自 `src/DeskNook/DeskNook.csproj` 的 `<Version>`；升级安装（MajorUpgrade）靠固定的 UpgradeCode，旧版会被替换，已安装更新版本时拒绝降级。
+版本号取自 `src/DeskNook/DeskNook.csproj` 的 `<Version>`；升级安装（MajorUpgrade）靠固定的 UpgradeCode，旧版会被替换（先卸载旧版再安装新版），沿用原安装位置，安装界面会提示升级；已安装更新版本时拒绝降级。
 
 升级、修复、重装时 `AUTOSTART` 被忽略，保留原来的开机自启状态；要改，请在程序里设置。
 
