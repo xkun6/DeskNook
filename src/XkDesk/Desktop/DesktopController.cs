@@ -32,6 +32,9 @@ internal sealed class DesktopController : IDisposable
 
     private readonly Dispatcher _dispatcher;
     private readonly LayoutStore _store = new();
+    private readonly SettingsStore _settingsStore = new();
+    private readonly OrganizeUndoStore _undoStore = new();
+    private OrganizeUndo? _organizeUndo;
     private readonly DispatcherTimer _saveTimer;
     private readonly ClipboardWatcher _clipboard;
     private readonly Dictionary<string, MappedRuntime> _mapped = new();
@@ -53,6 +56,7 @@ internal sealed class DesktopController : IDisposable
     private DateTime _pendingOpUntil;
 
     public LayoutState Layout { get; private set; } = new();
+    public AppSettings Settings { get; private set; } = new();
     public DesktopItemSource Source { get; }
     public ShellIconCache Icons { get; }
     public IReadOnlyList<MonitorGrid> Grids { get; private set; } = Array.Empty<MonitorGrid>();
@@ -88,6 +92,8 @@ internal sealed class DesktopController : IDisposable
     {
         _dispatcher = dispatcher;
         Layout = _store.Load();
+        Settings = _settingsStore.Load();
+        _organizeUndo = _undoStore.Load();
 
         Source = new DesktopItemSource();
         Icons = new ShellIconCache(dispatcher);
@@ -927,6 +933,46 @@ internal sealed class DesktopController : IDisposable
             PlaceNear(keys, eff.Value.Grid.Name, col, row);
         }
         AfterBoxChange();
+    }
+
+    // ------------------------------------------------------------ 一键整理 / 设置
+
+    /// <summary>最近一次整理是否还可以撤销（程序重启后仍有效）。</summary>
+    public bool CanUndoOrganize => _organizeUndo != null;
+
+    /// <summary>一键整理：自由区的项按规则归入同名格子（没有则新建）。只改布局，不动文件。返回移动的项数。</summary>
+    public int OrganizeAll()
+    {
+        if (Grids.Count == 0) return 0;
+        var plan = AutoOrganizer.Plan(Layout, Source.Items, Settings.OrganizeRules, Grids);
+        var undo = AutoOrganizer.Apply(Layout, plan, DateTime.UtcNow);
+        if (undo == null) { Log.Info("一键整理：没有可整理的项"); return 0; }
+        _organizeUndo = undo;
+        _undoStore.Save(undo);
+        Layout.View.SortKey = "";
+        Log.Info($"一键整理：{plan.MovedCount} 项，{plan.Boxes.Count} 个格子（新建 {undo.CreatedBoxIds.Count}）");
+        AfterBoxChange();
+        Flush();
+        return plan.MovedCount;
+    }
+
+    /// <summary>撤销最近一次整理（只回滚那次新建的格子与移入的项）。</summary>
+    public void UndoOrganize()
+    {
+        if (_organizeUndo == null) return;
+        var n = AutoOrganizer.ApplyUndo(Layout, _organizeUndo, Source.Items.Select(i => i.Key).ToList(), Grids);
+        Log.Info($"撤销整理：{n} 项回到自由区");
+        _organizeUndo = null;
+        _undoStore.Clear();
+        AfterBoxChange();
+        Flush();
+    }
+
+    /// <summary>保存并启用新的设置（设置窗口调用）。</summary>
+    public void ApplySettings(AppSettings settings)
+    {
+        Settings = settings;
+        _settingsStore.Save(settings);
     }
 
     // ------------------------------------------------------------ 拖放

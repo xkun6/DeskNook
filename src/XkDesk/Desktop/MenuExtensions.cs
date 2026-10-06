@@ -178,8 +178,24 @@ internal static class MenuExtensions
             Handler = c => c.Controller.NewMappedBox(c.Hwnd, c.ScreenPoint, c.Monitor),
         },
 
-        // ---- 空白处：末尾 退出（阶段 4 托盘做好后移除）----
+        new()
+        {
+            Title = "一键整理(&Z)", Position = MenuPosition.BeforeNew, Applies = c => c.IsDesktopBackground,
+            Handler = c => c.Controller.OrganizeAll(),
+        },
+        new()
+        {
+            Title = "撤销整理(&X)", Position = MenuPosition.BeforeNew, Applies = c => c.IsDesktopBackground,
+            Enabled = c => c.Controller.CanUndoOrganize, Handler = c => c.Controller.UndoOrganize(),
+        },
+
+        // ---- 空白处：末尾 设置 / 退出（阶段 4 托盘做好后移除）----
         Sep(MenuPosition.Bottom, c => c.IsDesktopBackground),
+        new()
+        {
+            Title = "xk-desk 设置…", Position = MenuPosition.Bottom, Applies = c => c.IsDesktopBackground,
+            Handler = c => Views.SettingsWindow.ShowSingleton(c.Controller),
+        },
         new()
         {
             Title = "退出 xk-desk", Position = MenuPosition.Bottom, Applies = c => c.IsDesktopBackground,
