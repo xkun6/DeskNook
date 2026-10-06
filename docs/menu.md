@@ -40,7 +40,7 @@ v1（现为回退路径）在 DeskNook 进程里自己向 Shell 要菜单对象�
 
 同一个 DLL（`{EA0A2ED4-03C2-402D-A461-E558E4D20973}`）：
 
-1. **Shell 扩展**（`ext.cpp:DnExt`，实现 `IShellExtInit` + `IContextMenu`）：注册在 HKCU 的三个 `ContextMenuHandlers` 下，**任何**弹出文件/文件夹/背景右键菜单的进程（Explorer 窗口、对话框、第三方文件管理器…）都会加载它。`QueryContextMenu` 时把上下文经管道发给 DeskNook（200ms 超时，DeskNook 没运行/超时就不加任何项），拿回要插入的项；用户点击后 `InvokeCommand` 再经管道通知 DeskNook 执行。
+1. **Shell 扩展**（`ext.cpp:DnExt`，实现 `IShellExtInit` + `IContextMenu`）：注册在 HKCU 的三个 `ContextMenuHandlers` 下，**任何**弹出文件/文件夹/背景右键菜单的进程（Explorer 窗口、对话框、第三方文件管理器…）都会加载它。`QueryContextMenu` 时把上下文经管道发给 DeskNook（200ms 超时，DeskNook 没运行/超时就不加任何项；唯一例外是 DeskNook 未运行时桌面背景菜单里的“开启桌面整理”，见 [DeskNook 未运行时的桌面菜单](#desknook-未运行时的桌面菜单)），拿回要插入的项；用户点击后 `InvokeCommand` 再经管道通知 DeskNook 执行。
 2. **菜单代理**（`proxy.cpp`）：DLL 一旦进入“拥有桌面的那个 explorer.exe”，就在 Explorer 的**桌面（DefView）线程**上建隐藏窗口 `DeskNook.MenuProxy`。DeskNook 用 `WM_COPYDATA` 发请求，代理在 Explorer 进程里取真实的 `IContextMenu`、`TrackPopupMenuEx` 弹出、转发菜单消息、执行命令，并经管道回报事件。
 
 代理为什么必须在桌面线程：`IShellView` 属于桌面线程的 COM 套间，别的线程拿到的是代理对象，`GetItemObject(SVGIO_BACKGROUND)` 会失败（`0x80040155`）。窗口建在桌面线程上，则菜单创建、`GetItemObject`、`InvokeCommand` 全在该线程内，与原生桌面右键完全一致。
@@ -234,6 +234,24 @@ DesktopSurface 右键 -> DesktopController.ShowMenu / ShowBoxMenu            [De
 | `WM_COPYDATA` 发送超时 | 1000ms（`SMTO_ABORTIFHUNG`） | `ExplorerMenuProxy.SendCopyData` |
 | 查询会话保留 | 最近 64 个（`MaxSessions`），更旧的 `invoke` 会报“找不到项” | `MenuPipeServer` |
 | 待处理请求保留 | 5 分钟（`Purge`） | `ExplorerMenuProxy` |
+
+## DeskNook 未运行时的桌面菜单
+
+DeskNook 没运行时桌面是系统原生的，右键由 Explorer 自己弹；为了让用户有个固定入口，扩展在这种情况下自己往桌面背景菜单里插 `桌面整理(&D) ▸ 开启桌面整理`。DeskNook 运行时走上面的管道查询逻辑（由 `MenuExtensions.Items` 里的 `桌面整理(&D)` 子菜单提供，其中最后一项 `关闭桌面整理` = 退出并还原系统桌面，`ExitApp`），**不会重复插入**。托盘菜单的“退出”不变。
+
+对应代码：`ext.cpp:DnExt::QueryNotRunning`（插入）、`StartDeskNook`（启动）、`IsDeskNookNotRunning`、`IsDesktopFolder`、`CursorOverRealDesktop`、`IconPath`。
+
+- **触发条件**（`DnExt::Query` 里管道往返失败后才进入 `QueryNotRunning`，全部满足才插）：
+  1. 背景菜单（`Initialize` 收到的是 `pidlFolder` 而非 `pdtobj`），且文件夹是桌面（`IsDesktopFolder`：桌面根/空 PIDL、`::desktop`、`FOLDERID_Desktop`、`FOLDERID_PublicDesktop`，按 PIDL 与路径两种方式比较）；
+  2. **DeskNook 未运行**（`IsDeskNookNotRunning`）：`OpenMutexW(SYNCHRONIZE, L"Local\\DeskNook.SingleInstance")` 打不开且 `GetLastError()==ERROR_FILE_NOT_FOUND`。这个名字就是 `App.xaml.cs:OnStartup` 里首实例创建的单实例互斥量（`DN_MUTEX_NAME` ↔ 该字符串，**两处必须一致**）；`Local\` 是会话级命名空间，不含用户 SID，Explorer 与 DeskNook 在同一会话所以能看到。**不用“管道连不上/超时”判断**，因为 DeskNook 忙（UI 线程卡）时管道会超时，会误判成未运行；互斥量存在就一律不加项，打不开但错误不是“不存在”（如权限）也按运行处理；
+  3. 鼠标下的窗口属于真桌面（`CursorOverRealDesktop`：`WindowFromPoint` 向上找 `Progman`/`WorkerW` 祖先），用来排除资源管理器窗口里打开“桌面”文件夹的背景菜单、文件对话框等。用键盘（Shift+F10）调出菜单时光标位置不一定在桌面上，这种情况不出现（宁缺毋滥）。
+- **文件右键、普通资源管理器窗口背景**：不满足条件 1/3，不出现。
+- **插入位置**：`QueryContextMenu` 的 `indexMenu`（即 Shell 调用我们这个 handler 的位置，与 `MenuPosition.Bottom`/`BeforeNew` 在扩展路径下的位置一致；扩展在原生菜单里没有“定位新建之前”的能力，见 [位置语义](#位置语义代理路径与回退路径不同)）。顶层项 `桌面整理(&D)` 带 `menu-app.ico` 图标，子项 `开启桌面整理` 无图标。
+- **图标**：DLL 位于 `<数据根>\shellext\`，图标由 `MenuIcons.EnsureExtracted` 释放到 `<数据根>\icons\menu-app.ico`，扩展按 DLL 路径推导（`IconPath`）后复用 `util.cpp:LoadMenuBitmap`（WIC）。文件不存在或解码失败只是不带图标，不影响出菜单。
+- **启动路径来源**：注册表 `HKCU\Software\DeskNook` 值 `ExePath`（`desknook.h:DN_REG_KEY/DN_REG_EXEPATH`）。写入者 `ShellExtRegistrar.EnsureRegistered`→`WriteExePath`（每次启动，值已是当前 `Environment.ProcessPath` 则不重写，判断见纯函数 `NeedsExePathUpdate`，单测 `ShellExtRegistrarTests`）；`--unregister` 时 `DeleteExePath` 删除。
+- **点击后**（`DnExt::InvokeCommand` → `Invoke`，命令动词名 `desknook.start`）：`StartDeskNook` 读 `ExePath`，必须存在且不是目录，`CreateProcessW` 启动（工作目录 = exe 所在目录，不等待，立即关闭句柄）；路径缺失/不存在/启动失败只记日志并返回失败 HRESULT，不会抛异常。重复点击由 DeskNook 的单实例互斥量兜底（第二个实例直接退出）。
+- **安全处理**（遵守下面的 [崩溃安全约束](#崩溃安全约束)）：整段在 `QueryContextMenu`/`InvokeCommand` 现有的 `__try/__except` 包裹之内；不碰管道（判断只用 `OpenMutexW`，不阻塞、没有等待）；不持锁、不回调外部；不跨线程保存 COM 指针（全部在 handler 所在线程的调用内完成）；启动进程不等待；日志走现有非阻塞 `Log`，不写路径以外的敏感内容（写“已启动/放弃”而不写 `ExePath`）。管道协议、CLSID、COPYDATA magic 均未改。
+- **旧 DLL 兼容**：Explorer 里钉住的旧 DLL 没有这段逻辑，只是 DeskNook 未运行时不加项；新 DLL 要重启 Explorer 后才生效（Explorer 里已加载的 handler 不会被替换）。
 
 ## 动词拦截
 

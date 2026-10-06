@@ -146,6 +146,7 @@
 | `HKCU\Software\Classes\Directory\shellex\ContextMenuHandlers\DeskNook` | 同上 | 同上 |
 | `HKCU\Software\Classes\Directory\Background\shellex\ContextMenuHandlers\DeskNook` | 同上 | 同上 |
 | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 值 `DeskNook` | `"<exe 完整路径>"`（带引号） | `AutoStart` |
+| `HKCU\Software\DeskNook` 值 `ExePath`（REG_SZ） | 当前 exe 完整路径（不带引号）。供 DeskNook **未运行**时 Shell 扩展的桌面右键“桌面整理 ▸ 开启桌面整理”启动程序（`ext.cpp:StartDeskNook`，常量 `desknook.h:DN_REG_KEY`/`DN_REG_EXEPATH`）。**启动时写**：`ShellExtRegistrar.EnsureRegistered`→`WriteExePath`，已是最新不重写（`NeedsExePathUpdate`）；**`--unregister` 删除**：`ShellExtRegistrar.DeleteExePath`（值删完且子键为空时连子键一并删）。详见 [menu.md](menu.md) | `ShellExtRegistrar` |
 | `HKLM\Software\DeskNook` 值 `StartMenuShortcut` / `DesktopShortcut`（DWORD=1） | MSI 快捷方式组件的 KeyPath，无运行时用途 | `installer/Package.wxs` |
 | `HKLM\Software\DeskNook` 值 `InstallDir`（字符串） | 安装目录（`[INSTALLFOLDER]`），1.0.1 起由 MSI 写入、卸载时随组件删除；升级时 `RegistrySearch` 读回作为默认安装目录 | `installer/Package.wxs` |
 | `HKCU\Software\DeskNookTests` | 仅单测使用（`AutoStartTests` 的专用 Run 键），测试后删除 | 测试 |

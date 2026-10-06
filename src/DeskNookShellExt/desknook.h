@@ -76,3 +76,8 @@ DEFINE_GUID(CLSID_DeskNookContextMenu, 0xea0a2ed4, 0x03c2, 0x402d, 0xa4, 0x61, 0
 
 #define DN_PIPE_NAME L"\\\\.\\pipe\\DeskNook.Menu"
 #define DN_PROXY_CLASS L"DeskNook.MenuProxy"
+// 单实例互斥量（= App.xaml.cs 的 Local\DeskNook.SingleInstance，会话级，不含 SID）；打不开 = DeskNook 未运行
+#define DN_MUTEX_NAME L"Local\\DeskNook.SingleInstance"
+// DeskNook 启动时写入的 exe 路径（ShellExtRegistrar.AppKey / ExePathValue）
+#define DN_REG_KEY L"Software\\DeskNook"
+#define DN_REG_EXEPATH L"ExePath"

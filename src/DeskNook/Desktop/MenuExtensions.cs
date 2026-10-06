@@ -232,7 +232,7 @@ internal static class MenuExtensions
                 new() { Title = "撤销整理(&U)", Icon = I("undo"), Enabled = c => c.Controller.CanUndoOrganize, Handler = c => c.Controller.UndoOrganize() },
                 new() { IsSeparator = true },
                 new() { Title = "设置…", Icon = I("settings"), Handler = c => Views.SettingsWindow.ShowSingleton(c.Controller) },
-                new() { Title = "退出桌面整理", Icon = I("exit"), Handler = _ => ((App)System.Windows.Application.Current).ExitApp() },
+                new() { Title = "关闭桌面整理", Icon = I("exit"), Handler = _ => ((App)System.Windows.Application.Current).ExitApp() },
             },
         },
 

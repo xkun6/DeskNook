@@ -17,6 +17,10 @@ internal static class ShellExtRegistrar
     public const string DllName = "DeskNookShellExt.dll";
     public const string HandlerName = "DeskNook";
 
+    /// <summary>HKCU\Software\DeskNook 的 ExePath：当前 exe 完整路径，DeskNook 未运行时 Shell 扩展的“开启桌面整理”据此启动（与 desknook.h 的 DN_REG_KEY 一致）。</summary>
+    public const string AppKey = @"Software\DeskNook";
+    public const string ExePathValue = "ExePath";
+
     // 旧版遗留注册（XkDesk、DeskNext 两套），一次性清理用；名称与 CLSID 必须保持原样
     private static readonly (string Handler, string Clsid, string RunValue)[] Legacy =
     {
@@ -46,6 +50,7 @@ internal static class ShellExtRegistrar
 
             var changed = CleanLegacyRegistration(migrateAutostart: true);
             changed |= Write(dst);
+            WriteExePath(Environment.ProcessPath);
             RegisteredDll = dst;
             CleanOld(dst);
             if (changed)
@@ -74,6 +79,7 @@ internal static class ShellExtRegistrar
             classes.DeleteSubKeyTree($@"CLSID\{ClsidText}", throwOnMissingSubKey: false);
             CleanLegacyRegistration(migrateAutostart: false);
             DeleteAutostart();
+            DeleteExePath();
             Win32.SHChangeNotify(Win32.SHCNE_ASSOCCHANGED, Win32.SHCNF_IDLIST, IntPtr.Zero, IntPtr.Zero);
             Log.Info("Shell 扩展注册项已删除");
         }
@@ -83,6 +89,41 @@ internal static class ShellExtRegistrar
         }
         CleanOld(null);
         RegisteredDll = null;
+    }
+
+    /// <summary>ExePath 是否需要（重）写：当前值不是与 exe 完全相同的字符串。</summary>
+    internal static bool NeedsExePathUpdate(object? current, string? exe) =>
+        !string.IsNullOrEmpty(exe) && !(current is string s && s == exe);
+
+    /// <summary>写 HKCU\Software\DeskNook\ExePath（已是最新不重写；失败只记日志，不影响启动）。</summary>
+    private static void WriteExePath(string? exe)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(exe)) return;
+            using var key = Registry.CurrentUser.CreateSubKey(AppKey);
+            if (!NeedsExePathUpdate(key.GetValue(ExePathValue), exe)) return;
+            key.SetValue(ExePathValue, exe, RegistryValueKind.String);
+            Log.Info($"已写入启动路径 ExePath：{exe}");
+        }
+        catch (Exception ex) { Log.Error("写入 ExePath 失败", ex); }
+    }
+
+    /// <summary>--unregister：删除 ExePath（卸载后扩展不应再能启动已删除的程序）；子键空了顺便删掉。</summary>
+    private static void DeleteExePath()
+    {
+        try
+        {
+            using (var key = Registry.CurrentUser.OpenSubKey(AppKey, writable: true))
+                key?.DeleteValue(ExePathValue, throwOnMissingValue: false);
+            using (var key = Registry.CurrentUser.OpenSubKey(AppKey))
+            {
+                if (key != null && key.ValueCount == 0 && key.SubKeyCount == 0)
+                    Registry.CurrentUser.DeleteSubKey(AppKey, throwOnMissingSubKey: false);
+            }
+            Log.Info("启动路径 ExePath 已删除");
+        }
+        catch (Exception ex) { Log.Error("删除 ExePath 失败", ex); }
     }
 
     /// <summary>--unregister：删除开机自启项（卸载后不应残留）。</summary>
