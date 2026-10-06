@@ -20,6 +20,8 @@ internal sealed class DesktopSurface : Canvas
     private readonly Dictionary<string, IconItemControl> _controls = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, BoxControl> _boxes = new();
     private readonly List<Border> _guideLines = new();
+    private Border? _ghost;
+    private bool _ghostShown;
     private readonly Border _band;
     private IntPtr _hwnd;
     private bool _windowActive = true;
@@ -67,6 +69,7 @@ internal sealed class DesktopSurface : Canvas
         _c.BoxRenameRequested += OnBoxRenameRequested;
         _c.IconsVisibleChanged += OnIconsVisibleChanged;
         _c.AppearanceChanged += ApplyAppearance;
+        _c.BoxGhostChanged += OnBoxGhost;
         Loaded += (_, _) => Rebuild();
         Unloaded += OnUnloaded;
     }
@@ -89,6 +92,7 @@ internal sealed class DesktopSurface : Canvas
         _c.BoxRenameRequested -= OnBoxRenameRequested;
         _c.IconsVisibleChanged -= OnIconsVisibleChanged;
         _c.AppearanceChanged -= ApplyAppearance;
+        _c.BoxGhostChanged -= OnBoxGhost;
     }
 
     /// <summary>“显示桌面图标”开关：只隐藏本程序画的图标和格子，画布本身仍可右键（弹桌面背景菜单）。</summary>
@@ -397,6 +401,43 @@ internal sealed class DesktopSurface : Canvas
                 SetLeft(line, Origin.X + g.From); SetTop(line, Origin.Y + g.Pos);
             }
         }
+    }
+
+    /// <summary>跨显示器拖动格子：目标是本屏时画预览框与辅助线，否则（或 null）清除本屏上的预览。</summary>
+    private void OnBoxGhost(BoxGhost? g)
+    {
+        if (g == null || !string.Equals(g.Monitor, _monitor.DeviceName, StringComparison.OrdinalIgnoreCase))
+        {
+            if (!_ghostShown) return;
+            _ghostShown = false;
+            _ghost!.Visibility = Visibility.Collapsed;
+            ShowGuides(Array.Empty<Guide>());
+            return;
+        }
+        if (_ghost == null)
+        {
+            _ghost = new Border
+            {
+                CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(2), IsHitTestVisible = false,
+                Background = new SolidColorBrush(Color.FromArgb(0x99, 0x1B, 0x20, 0x2A)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0xE0, 0x5A, 0xB0, 0xFF)),
+                Child = new TextBlock
+                {
+                    Foreground = Brushes.White, FontFamily = SystemFonts.MessageFontFamily, FontSize = 13,
+                    TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(11, 6, 11, 0), VerticalAlignment = VerticalAlignment.Top,
+                },
+            };
+            SetZIndex(_ghost, 140);
+            Children.Add(_ghost);
+        }
+        ((TextBlock)_ghost.Child).Text = g.Title;
+        _ghost.Width = g.Rect.W;
+        _ghost.Height = g.Rect.H;
+        SetLeft(_ghost, Origin.X + g.Rect.X);
+        SetTop(_ghost, Origin.Y + g.Rect.Y);
+        _ghost.Visibility = Visibility.Visible;
+        _ghostShown = true;
+        ShowGuides(g.Guides);
     }
 
     public void RequestBoxMenu(BoxState box)

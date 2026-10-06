@@ -10,6 +10,9 @@ public sealed record Guide(bool Vertical, double Pos, double From, double To);
 
 public sealed record SnapResult(BoxRect Rect, IReadOnlyList<Guide> Guides);
 
+/// <summary>格子跨显示器拖动时在目标显示器上的预览：Rect 相对目标工作区（DIP），Guides 为目标屏上的辅助线。</summary>
+public sealed record BoxGhost(string Monitor, BoxRect Rect, string Title, IReadOnlyList<Guide> Guides);
+
 /// <summary>格子几何（纯逻辑）：有效矩形、占用格、内容排布、移动/缩放吸附、新建选位。</summary>
 public static class BoxGeometry
 {
@@ -126,6 +129,18 @@ public static class BoxGeometry
         }
         var best = SnapNear(raw, Cands());
         return PixelSnap(Math.Clamp(best, 0, Math.Max(0, workSize - size)), scale);
+    }
+
+    /// <summary>
+    /// 跨显示器移动：光标（屏幕物理像素）减去按下点在格子内的偏移（DIP），得到相对目标工作区的原始矩形；
+    /// 宽高夹到目标工作区内（与 Effective 一致，预览即所得）。
+    /// </summary>
+    public static BoxRect RawRectOnMonitor(int cursorX, int cursorY, double grabX, double grabY, double w, double h, MonitorGrid grid)
+    {
+        var workW = grid.WorkWidth / grid.Scale;
+        var workH = grid.WorkHeight / grid.Scale;
+        return new BoxRect((cursorX - grid.WorkLeft) / grid.Scale - grabX, (cursorY - grid.WorkTop) / grid.Scale - grabY,
+                           Math.Min(w, workW), Math.Min(h, workH));
     }
 
     /// <summary>移动：自由跟手（按设备像素取整）；靠近其他格子/屏幕边缘（阈值内）则吸附到边缘。</summary>

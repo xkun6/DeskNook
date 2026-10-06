@@ -300,6 +300,20 @@ public class BoxLayoutTests
     }
 
     [Fact]
+    public void 跨屏移动_按目标显示器工作区与缩放换算并夹住尺寸()
+    {
+        // 左侧副屏：工作区原点 (-1920, 0)，150% 缩放，工作区 1920x1040 物理像素 → 1280x693.33 DIP
+        var grid = new MonitorGrid("M2", 1.5, -1920, 0, 1920, 1040, 75, 100);
+        var r = BoxGeometry.RawRectOnMonitor(-1000, 300, 50, 10, 300, 236, grid);
+        Assert.Equal(920 / 1.5 - 50, r.X, 9);
+        Assert.Equal(300 / 1.5 - 10, r.Y, 9);
+        Assert.Equal((300, 236), (r.W, r.H));
+        var big = BoxGeometry.RawRectOnMonitor(-1000, 300, 0, 0, 2000, 900, grid);
+        Assert.Equal(1280, big.W, 9);
+        Assert.Equal(1040 / 1.5, big.H, 9);
+    }
+
+    [Fact]
     public void 缩放_逐像素_右下角()
     {
         var start = new BoxRect(75, 100, 300, BoxGeometry.HeightFor(2, 100));

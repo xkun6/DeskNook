@@ -48,8 +48,9 @@
 - **跟手**：位置/边按“起始矩形 + 鼠标位移”算出原始值，取整到**设备像素**（`PixelSnap`，按该显示器 `Scale`），不会漂移。
 - **吸附**：只有当拖动的边与目标位置（屏幕工作区边缘 / 其他格子的左右上下边）距离 ≤ 8 DIP 才吸到该位置，否则保持原始值；移动时左右边对左右边、左边对右边、右边对左边都是候选。缩放时被拖动的边吸附；Left/Top 拖动时对侧边不动。
 - **辅助线**：`FindGuides` 找当前矩形与其他格子/屏幕边缘重合（<0.5 DIP）的线，`DesktopSurface.ShowGuides` 画细线（Z 序 150）。
+- **跨显示器移动**：移动时每帧 `GetCursorPos` + `DesktopController.MonitorAt` 判断光标所在显示器；到了别的屏，`BoxControl.TryCrossMonitor` 让源格子退回起点并半透明（不能隐藏，会丢鼠标捕获），用 `BoxGeometry.RawRectOnMonitor`（按目标屏 `Scale`/工作区换算，宽高夹到目标工作区）+ `SnapMove`（目标屏的其他格子）算预览，经 `DesktopController.ShowBoxGhost` → `BoxGhostChanged` 由目标屏 `DesktopSurface.OnBoxGhost` 画预览框与辅助线；松手 `SetBoxRect(目标显示器, 预览矩形)`，取消则清除预览。缩放不跨屏。
 - **只更新当前格子**：拖动过程中不触发 `DesktopController.ItemsChanged`，也就不会重建整个桌面；`BoxControl` 自己维护 `_preview` 矩形并 `Relayout()`。松手（`EndDrag(commit:true)`）且矩形有变化才调用 `DesktopController.SetBoxRect`（写 `Monitor`、`Rect` → `Reconcile` → 保存 → `ItemsChanged`）。取消/丢失鼠标捕获则丢弃预览。
-- **合帧**：`OnMouseMove` 只记录最新鼠标位置 `_pendingPos`；`CompositionTarget.Rendering` 每帧调用 `ProcessPending()` 处理最近一次位置（60 步 MouseMove 也最多每帧算一次）。拖动开始时才挂接 `Rendering`，结束时摘掉。拖动开始还会缓存本显示器的其他格子矩形（`_dragOthers`）与工作区尺寸，过程中不再访问控制器。
+- **合帧**：`OnMouseMove` 只记录最新鼠标位置 `_pendingPos`；`CompositionTarget.Rendering` 每帧调用 `ProcessPending()` 处理最近一次位置（60 步 MouseMove 也最多每帧算一次）。拖动开始时才挂接 `Rendering`，结束时摘掉。拖动开始还会缓存本显示器的其他格子矩形（`_dragOthers`）与工作区尺寸（跨屏时在切换目标屏那一刻缓存目标屏的），过程中不再访问控制器。
 - 自动化测试覆盖：`tools/test/test-box-smooth.ps1`（S02~S07，含“拖动期间不重建桌面”）。
 
 ### 折叠、锁定、排序、滚动

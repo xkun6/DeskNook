@@ -101,6 +101,11 @@ internal sealed class DesktopController : IDisposable
     /// <summary>外观（格子透明度）变化，需要刷新已有格子。</summary>
     public event Action? AppearanceChanged;
 
+    /// <summary>格子跨显示器拖动的目标屏预览变化（null = 清除）。</summary>
+    public event Action<BoxGhost?>? BoxGhostChanged;
+
+    public void ShowBoxGhost(BoxGhost? ghost) => BoxGhostChanged?.Invoke(ghost);
+
     /// <summary>实时预览格子透明度（不保存；取消设置时用已保存的值再预览一次即可还原）。</summary>
     public void PreviewBoxOpacity(double opacity)
     {
@@ -344,6 +349,10 @@ internal sealed class DesktopController : IDisposable
 
     public IEnumerable<BoxState> BoxesOn(string monitor) =>
         Layout.Boxes.Where(b => EffectiveRect(b)?.Grid.Name == monitor);
+
+    /// <summary>屏幕物理像素点所在显示器的设备名；不在任何显示器上时为 null。</summary>
+    public string? MonitorAt(Win32.POINT p) =>
+        _monitors.FirstOrDefault(m => p.X >= m.Bounds.Left && p.X < m.Bounds.Right && p.Y >= m.Bounds.Top && p.Y < m.Bounds.Bottom).DeviceName;
 
     public int BoxCols(BoxState box)
     {

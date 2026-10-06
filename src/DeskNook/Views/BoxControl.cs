@@ -74,6 +74,10 @@ internal sealed class BoxControl : Canvas
     private Size _dragWork;
     private Point? _pendingPos;              // 合帧：每帧最多处理一次最新鼠标位置
     private bool _renderHooked;
+    private Point _grab;                     // 按下点在格子内的偏移（DIP），跨屏时用
+    private string? _crossMonitor;           // 移动中光标所在的其他显示器；null = 仍在本屏
+    private BoxRect? _crossRect;             // 跨屏预览矩形（相对目标工作区）
+    private IReadOnlyList<BoxRect> _crossOthers = Array.Empty<BoxRect>();
 
     private TextBox? _titleEdit;
     private bool _titleEditDone;
@@ -410,6 +414,9 @@ internal sealed class BoxControl : Canvas
     {
         _mode = mode;
         _startMouse = e.GetPosition(_surface);
+        _grab = e.GetPosition(this);
+        _crossMonitor = null;
+        _crossRect = null;
         _startRect = _rect.Clone();
         _preview = _rect.Clone();
         _dragWork = _surface.WorkSize;
@@ -442,6 +449,7 @@ internal sealed class BoxControl : Canvas
     {
         if (_pendingPos is not { } pos || _mode is not (Mode.Move or Mode.Resize)) return;
         _pendingPos = null;
+        if (_mode == Mode.Move && TryCrossMonitor()) return;
         double dx = pos.X - _startMouse.X, dy = pos.Y - _startMouse.Y;
         var scale = _surface.Scale;
         SnapResult res = _mode == Mode.Move
@@ -450,6 +458,40 @@ internal sealed class BoxControl : Canvas
         _preview = res.Rect;
         Relayout();
         _surface.ShowGuides(res.Guides);
+    }
+
+    /// <summary>移动中光标到了别的显示器：源格子退回起点并半透明，在目标屏画预览；回到本屏则恢复。返回是否处于跨屏状态。</summary>
+    private bool TryCrossMonitor()
+    {
+        Win32.GetCursorPos(out var cur);
+        var target = _c.MonitorAt(cur);
+        var grid = target == null || string.Equals(target, _surface.MonitorName, StringComparison.OrdinalIgnoreCase)
+            ? null : _c.Grids.FirstOrDefault(g => string.Equals(g.Name, target, StringComparison.OrdinalIgnoreCase));
+        if (grid == null) { LeaveCross(); return false; }
+        if (!string.Equals(_crossMonitor, grid.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            _crossMonitor = grid.Name;
+            _crossOthers = _c.BoxesOn(grid.Name).Where(b => b.Id != Box.Id).Select(b => _c.EffectiveRect(b)!.Value.Rect).ToList();
+            _surface.ShowGuides(Array.Empty<Guide>());
+            _preview = _startRect.Clone();
+            Opacity = 0.4;
+            Relayout();
+        }
+        var raw = BoxGeometry.RawRectOnMonitor(cur.X, cur.Y, _grab.X, _grab.Y, _startRect.W, _startRect.H, grid);
+        var res = BoxGeometry.SnapMove(raw, _crossOthers, grid.WorkWidth / grid.Scale, grid.WorkHeight / grid.Scale, grid.Scale);
+        _crossRect = res.Rect;
+        _c.ShowBoxGhost(new BoxGhost(grid.Name, res.Rect, Box.Name, res.Guides));
+        return true;
+    }
+
+    private void LeaveCross()
+    {
+        if (_crossMonitor == null) return;
+        _crossMonitor = null;
+        _crossRect = null;
+        _crossOthers = Array.Empty<BoxRect>();
+        Opacity = 1;
+        _c.ShowBoxGhost(null);
     }
 
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
@@ -471,11 +513,19 @@ internal sealed class BoxControl : Canvas
         if (_renderHooked) { CompositionTarget.Rendering -= OnRendering; _renderHooked = false; }
         var mode = _mode;
         var preview = _preview;
+        var crossMonitor = _crossMonitor;
+        var crossRect = _crossRect;
+        LeaveCross();
         _mode = Mode.None;
         if (IsMouseCaptured) ReleaseMouseCapture();
         _surface.ShowGuides(Array.Empty<Guide>());
         _preview = null;
         Cursor = Cursors.Arrow;
+        if (commit && mode == Mode.Move && crossMonitor != null && crossRect != null)
+        {
+            _c.SetBoxRect(Box, crossMonitor, crossRect);
+            return;
+        }
         if (commit && preview != null && mode is Mode.Move or Mode.Resize)
         {
             var changed = Math.Abs(preview.X - _startRect.X) > 0.01 || Math.Abs(preview.Y - _startRect.Y) > 0.01 ||
