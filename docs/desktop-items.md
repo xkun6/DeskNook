@@ -40,6 +40,8 @@
 
 **耗时与虚拟项缓存**：桌面 255 项空闲时 `Enumerate()` 约 15ms（首次约 180ms），整条刷新应在“去抖 300ms + 几十 ms”内完成。枚举时对**不在用户/公共桌面目录下的项（回收站、此电脑等虚拟项）**要问系统桌面视图是否显示（`DesktopItemSource.Enumerate` → `SystemDesktopView.Acquire/IsShown`），这是**跨进程 COM 调用**进 Explorer 桌面线程；而“新建 ▸ 文件/文件夹”由 Explorer DefView 执行（日志 `代理已执行 … DefView=True`），它忙于新项与进入自身重命名时，该调用会被阻塞数秒（实测新建后 2~3 秒才刷新，删除/DefView=False 的操作只有约 0.4 秒）。因此：结果按解析名缓存在 `DesktopItemSource._shownCache`，去抖路径命中缓存则不再询问 Explorer；显式 `Refresh()`（菜单“刷新”、`CommitRename`）清缓存重新询问。刷新完成日志带“刷新耗时 X ms，枚举 Y ms”，单次询问超过 200ms 另记一行“询问系统桌面视图耗时”，用于确认是否仍被阻塞。
 
+**缓存失效规则**：`DesktopItemSource.NeedsShownCacheReset` 判断每条通知，满足任一则下次去抖刷新先清 `_shownCache`：事件含 `SHCNE_ASSOCCHANGED`（该事件会额外触发一次去抖刷新）；任一 PIDL 解析名以 `::` 开头（虚拟/CLSID 项变化，如“桌面图标设置”勾选此电脑/回收站）；`UPDATEDIR/UPDATEITEM` 且两个 PIDL 都无解析名（作用于桌面根）。新建文件那批通知（`CREATE/MKDIR [桌面目录下路径]`、`UPDATEITEM [桌面目录]`、`0x4000000` 空路径）不触发，单测 `ShownCacheResetTests`。隐藏窗口未处理 `WM_SETTINGCHANGE`。
+
 `ItemDiff.Compute` 的规则：key 比较忽略大小写；先按改名提示配对（旧 key 在旧集合且不在新集合、新 key 在新集合且不在旧集合才成立），配对的进 `Renamed`，**不**算新增/删除；其余新增、删除、指纹变化（`Updated`）。没有改名提示（例如外部程序批量改名）则按“删除 + 新增”处理，位置会丢（新增项走空位分配）。
 
 ### 改名保留位置

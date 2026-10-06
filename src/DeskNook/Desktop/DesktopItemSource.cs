@@ -31,6 +31,8 @@ internal sealed class DesktopItemSource : IDisposable
     private readonly string _prefix;
     /// <summary>非桌面目录项（虚拟项）“系统桌面是否显示”的结果缓存：key = 解析名。询问系统视图是跨进程 COM 调用，Explorer 桌面线程忙时会阻塞数秒。</summary>
     private readonly Dictionary<string, bool> _shownCache = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>本批通知里出现了可能改变虚拟项显示状态的事件：下次去抖刷新先清 _shownCache。</summary>
+    private bool _resetShownCache;
     private List<DesktopItem> _items = new();
 
     public IReadOnlyList<DesktopItem> Items => _items;
@@ -77,7 +79,8 @@ internal sealed class DesktopItemSource : IDisposable
     public void Refresh(bool useShownCache = false)
     {
         var sw = Stopwatch.StartNew();
-        if (!useShownCache) _shownCache.Clear();
+        if (!useShownCache || _resetShownCache) _shownCache.Clear();
+        _resetShownCache = false;
         var hints = _renameHints.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
         _renameHints.Clear();
         var fresh = Load();
@@ -170,11 +173,13 @@ internal sealed class DesktopItemSource : IDisposable
             {
                 IconInvalidated?.Invoke(null);
                 Log.Info($"桌面通知：图标缓存失效（事件 0x{evt:X}）");
+                if ((evt & Win32.SHCNE_ASSOCCHANGED) != 0) { _resetShownCache = true; Schedule(); }
                 return;
             }
 
             string? n1 = NameOf(p1), n2 = NameOf(p2);
             Log.Info($"桌面通知：事件 0x{evt:X} [{n1}] [{n2}]");
+            if (NeedsShownCacheReset(evt, n1, n2)) _resetShownCache = true;
 
             if ((evt & (ShellApi.SHCNE_RENAMEITEM | ShellApi.SHCNE_RENAMEFOLDER)) != 0 && n1 != null && n2 != null)
                 _renameHints[_prefix + n1] = _prefix + n2;
@@ -186,6 +191,21 @@ internal sealed class DesktopItemSource : IDisposable
         {
             Win32.SHChangeNotification_Unlock(hLock);
         }
+    }
+
+    /// <summary>
+    /// 通知是否可能改变虚拟项（此电脑/回收站等）的显示状态，需要清空 _shownCache：
+    /// 解析名以 "::" 开头（虚拟/CLSID 项），或 UPDATEDIR/UPDATEITEM 作用于桌面根（两个 PIDL 都没有解析名）。
+    /// 新建文件批次（CREATE/MKDIR [桌面目录下的路径]、UPDATEITEM [桌面目录]、0x4000000 空路径）返回 false。
+    /// </summary>
+    internal static bool NeedsShownCacheReset(int evt, string? n1, string? n2)
+    {
+        evt &= 0x7FFFFFFF;
+        if ((evt & Win32.SHCNE_ASSOCCHANGED) != 0) return true;
+        if (n1 != null && n1.StartsWith("::", StringComparison.Ordinal)) return true;
+        if (n2 != null && n2.StartsWith("::", StringComparison.Ordinal)) return true;
+        return (evt & (ShellApi.SHCNE_UPDATEDIR | ShellApi.SHCNE_UPDATEITEM)) != 0 &&
+               string.IsNullOrEmpty(n1) && string.IsNullOrEmpty(n2);
     }
 
     /// <summary>绝对 PIDL → 与 DesktopItem.Key 一致的解析名。</summary>
