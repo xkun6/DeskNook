@@ -1,0 +1,12 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.userprefs
+*.log
+[Dd]ebug/
+[Rr]elease/
+TestResults/
+.idea/
+.vscode/
