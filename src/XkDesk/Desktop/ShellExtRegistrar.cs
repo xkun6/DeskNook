@@ -9,7 +9,7 @@ namespace XkDesk.Desktop;
 /// <summary>
 /// 注册/卸载 XkShellExt.dll（HKCU\Software\Classes，无需管理员）。
 /// 为避免 Explorer 占用输出目录里的 DLL 导致重新编译失败，启动时按内容哈希复制到
-/// %LocalAppData%\XkDesk\shellext\XkShellExt.&lt;hash8&gt;.dll，并注册这份副本。
+/// &lt;数据根&gt;\shellext\XkShellExt.&lt;hash8&gt;.dll，并注册这份副本。
 /// </summary>
 internal static class ShellExtRegistrar
 {
@@ -19,8 +19,7 @@ internal static class ShellExtRegistrar
 
     private static readonly string[] HandlerParents = { @"*", @"Directory", @"Directory\Background" };
 
-    public static string ShellExtDir { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "XkDesk", "shellext");
+    public static string ShellExtDir { get; } = AppPaths.ShellExtDir;
 
     /// <summary>当前已注册的 DLL 路径（供代理加载、钩子兜底使用）；未注册为 null。</summary>
     public static string? RegisteredDll { get; private set; }

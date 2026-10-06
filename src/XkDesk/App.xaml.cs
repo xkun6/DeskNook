@@ -21,8 +21,7 @@ public partial class App : Application
     private ExplorerMenuProxy? _menuProxy;
     private MenuPipeServer? _pipeServer;
     private TrayIcon? _tray;
-    private static readonly string RunningFlag = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "XkDesk", "running.flag");
+    private static readonly string RunningFlag = AppPaths.RunningFlag;
     private DispatcherTimer? _reattachTimer;
     private DispatcherTimer? _displayTimer;
     private DateTime _reattachDeadline;

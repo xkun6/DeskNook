@@ -3,7 +3,7 @@
 # 注意：一键整理作用于真实桌面的全部自由图标（只改布局不动文件）；开始前备份 layout/settings/organize-undo 三个 json，结束逐字节恢复。
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, System.Windows.Forms
 
-$AppDir = Join-Path $env:APPDATA 'XkDesk'
+$AppDir = $Script:DataDir   # 程序目录下的 data
 $Files = @('layout.json', 'settings.json', 'organize-undo.json')
 $BakDir = Join-Path $env:TEMP 'xk-stage3-backup'
 $Marker = Join-Path $BakDir '_backed'

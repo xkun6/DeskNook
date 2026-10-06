@@ -1,9 +1,9 @@
 ﻿# 右键菜单 v2（Explorer 内代理 + Shell 扩展）自动化测试公共库。输出文件前缀 m-。
 . $PSScriptRoot\box-lib.ps1
 
-$Script:AppDataDir = Join-Path $env:APPDATA 'XkDesk'
+$Script:AppDataDir = $Script:DataDir   # 程序目录下的 data（lib.ps1 定义）
 $Script:MBackupDir = Join-Path $env:TEMP 'xk-m-backup'
-$Script:ShellLogPath = Join-Path $env:APPDATA 'XkDesk\logs\shellext.log'
+$Script:ShellLogPath = Join-Path $Script:DataDir 'logs\shellext.log'
 $Script:AppDataFiles = @('layout.json', 'settings.json', 'organize-undo.json')
 
 if (-not ('XkTest.Ext' -as [type])) {

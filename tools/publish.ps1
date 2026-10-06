@@ -12,6 +12,8 @@ if ($SingleFile) { $args2 += @('-p:PublishSingleFile=true', '-p:IncludeNativeLib
 & dotnet @args2
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish 失败（退出码 $LASTEXITCODE）" }
 
+$dataDir = Join-Path $dist 'data'   # 运行时数据目录绝不随发布输出分发
+if (Test-Path $dataDir) { Remove-Item $dataDir -Recurse -Force }
 foreach ($f in 'XkDesk.exe', 'XkShellExt.dll') {
     if (-not (Test-Path (Join-Path $dist $f))) { throw "发布输出缺少 $f" }
 }

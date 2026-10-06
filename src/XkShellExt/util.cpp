@@ -9,12 +9,18 @@ namespace xk {
 
 static SRWLOCK g_logLock = SRWLOCK_INIT;
 
+// 日志写到 <数据根>\logs\shellext.log：本 DLL 位于 <数据根>\shellext\ 下，据此推导（目录名不符则不写日志）。
 static std::wstring LogPath() {
     wchar_t buf[MAX_PATH * 2];
-    DWORD n = GetEnvironmentVariableW(L"APPDATA", buf, ARRAYSIZE(buf));
+    DWORD n = GetModuleFileNameW(g_hMod, buf, ARRAYSIZE(buf));
     if (n == 0 || n >= ARRAYSIZE(buf)) return L"";
-    std::wstring dir = std::wstring(buf) + L"\\XkDesk";
-    CreateDirectoryW(dir.c_str(), nullptr);
+    std::wstring dir(buf);
+    for (int i = 0; i < 2; ++i) { // 先去掉文件名，再取得 shellext 目录名
+        size_t p = dir.find_last_of(L'\\');
+        if (p == std::wstring::npos) return L"";
+        if (i == 1 && _wcsicmp(dir.c_str() + p + 1, L"shellext") != 0) return L"";
+        dir.resize(p);
+    }
     dir += L"\\logs";
     CreateDirectoryW(dir.c_str(), nullptr);
     return dir + L"\\shellext.log";

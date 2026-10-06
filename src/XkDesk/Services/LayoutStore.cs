@@ -4,7 +4,7 @@ using XkDesk.Model;
 
 namespace XkDesk.Services;
 
-/// <summary>布局持久化：%AppData%\XkDesk\layout.json，先写临时文件再替换。</summary>
+/// <summary>布局持久化：data\layout.json，先写临时文件再替换。</summary>
 public sealed class LayoutStore
 {
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
@@ -14,7 +14,7 @@ public sealed class LayoutStore
 
     public LayoutStore(string? path = null)
     {
-        FilePath = path ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "XkDesk", "layout.json");
+        FilePath = path ?? AppPaths.Layout;
     }
 
     public LayoutState Load()

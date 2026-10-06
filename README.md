@@ -55,15 +55,17 @@ new()
 
 ## 数据位置
 
-- `%AppData%\XkDesk\`：`layout.json`（布局与隐藏状态）、`settings.json`（设置）、`organize-undo.json`、`logs\`、`running.flag`（运行标记，异常退出时残留，下次启动记录日志）
-- `%LocalAppData%\XkDesk\`：`shellext\`（按哈希命名的扩展 DLL 副本）、`icons\`（菜单图标）
+数据根目录（下称“数据根”）：程序位于 `C:\Program Files`、`C:\Program Files (x86)` 之下时为 `%AppData%\XkDesk`（该处程序目录通常不可写）；其余位置（便携版、解压/自行安装的目录）一律为程序目录下的 `data\`。
+
+- 数据根下：`layout.json`（布局与隐藏状态）、`settings.json`（设置）、`organize-undo.json`、`logs\`（`xkdesk.log`、`shellext.log`）、`running.flag`（运行标记，异常退出时残留，下次启动记录日志）
+- 数据根下：`shellext\`（按哈希命名的扩展 DLL 副本）、`icons\`（菜单图标）
+- 旧版（数据在 `%AppData%\XkDesk`、`%LocalAppData%\XkDesk`）不会自动迁移；需要旧布局时手动把 `%AppData%\XkDesk\layout.json` 等复制到新的数据根即可。
 
 ## 卸载
 
 1. 运行 `XkDesk.exe --exit` 退出程序（或托盘 → 退出）。
 2. 运行 `XkDesk.exe --unregister` 删除 Shell 扩展注册项；托盘 / 设置里取消“开机自启”（或删除 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\XkDesk`）。
-3. 删除 `%AppData%\XkDesk` 与 `%LocalAppData%\XkDesk`（若提示 DLL 被占用，重启资源管理器后再删）。
-4. 删除程序目录。
+3. 删除整个程序目录即可（若提示 `data\shellext` 里的 DLL 被占用，重启资源管理器后再删）；若程序装在 Program Files 下，数据在 `%AppData%\XkDesk`，一并手动删除。
 
 ## 已知限制
 

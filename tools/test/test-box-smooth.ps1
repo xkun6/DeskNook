@@ -3,7 +3,7 @@
 $JsonBak = Join-Path $env:TEMP 'xk-json-backup-smooth'
 if (Test-Path $JsonBak) { Remove-Item $JsonBak -Recurse -Force }
 New-Item -ItemType Directory -Path $JsonBak | Out-Null
-Get-ChildItem (Join-Path $env:APPDATA 'XkDesk') -Filter *.json -ErrorAction SilentlyContinue | Copy-Item -Destination $JsonBak -Force
+Get-ChildItem $Script:DataDir -Filter *.json -ErrorAction SilentlyContinue | Copy-Item -Destination $JsonBak -Force
 
 # 从 (x1,y1) 按住左键，逐步拖到 (x1+dx,y1+dy) 并停住；可截图；然后松开
 function Drag-Exact {
@@ -147,7 +147,7 @@ try {
 }
 finally {
     Finish-BoxTest
-    Get-ChildItem $JsonBak -Filter *.json | Copy-Item -Destination (Join-Path $env:APPDATA 'XkDesk') -Force
+    Get-ChildItem $JsonBak -Filter *.json | Copy-Item -Destination $Script:DataDir -Force
     Remove-Item $JsonBak -Recurse -Force -ErrorAction SilentlyContinue
 }
 $fails = Show-Summary

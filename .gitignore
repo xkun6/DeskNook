@@ -16,3 +16,6 @@ tools/test/out/
 
 # 发布输出
 dist/
+
+# 运行时数据目录（程序目录下的 data）
+data/

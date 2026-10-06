@@ -1,6 +1,6 @@
 ﻿# 测试公共辅助：读取 layout.json 得到图标屏幕坐标（主显示器，工作区原点 (0,0)，格子 75x100，图标 48）
 . $PSScriptRoot\lib.ps1
-$Script:LayoutPath = Join-Path $env:APPDATA 'XkDesk\layout.json'
+$Script:LayoutPath = Join-Path $Script:DataDir 'layout.json'
 
 function Get-IconCenter {
     param([Parameter(Mandatory)][string]$Name)

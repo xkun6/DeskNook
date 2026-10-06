@@ -32,7 +32,7 @@ try {
         Remove-Item (Join-Path $Script:AppDataDir 'layout.json') -Force -ErrorAction SilentlyContinue
         $Script:ExplorerPids = Get-ExplorerPids
         $mk = Get-LogMark
-        $shellDlls = @(Get-ChildItem (Join-Path $env:LOCALAPPDATA 'XkDesk\shellext') -Filter 'XkShellExt.*.dll' -ErrorAction SilentlyContinue | ForEach-Object Name)
+        $shellDlls = @(Get-ChildItem (Join-Path $Script:DataDir 'shellext') -Filter 'XkShellExt.*.dll' -ErrorAction SilentlyContinue | ForEach-Object Name)
         Write-Host "启动前已有的 DLL 副本：$($shellDlls -join ', ')"
         Start-XkDesk | Out-Null
         Invoke-Test '版本检测：旧版组件（Explorer 内）→ 日志警告 + 托盘气泡' {

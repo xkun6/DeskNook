@@ -4,13 +4,12 @@ using System.Reflection;
 namespace XkDesk.Services;
 
 /// <summary>
-/// 自定义菜单项的线条图标：嵌入资源里的多尺寸 ICO 释放到 %LocalAppData%\XkDesk\icons\，
+/// 自定义菜单项的线条图标：嵌入资源里的多尺寸 ICO 释放到 data\icons\，
 /// 路径交给 Shell 扩展（它按菜单当前 DPI 选最接近的帧，转成 32bpp PARGB 位图）。
 /// </summary>
 internal static class MenuIcons
 {
-    public static string Dir { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "XkDesk", "icons");
+    public static string Dir { get; } = AppPaths.IconsDir;
 
     /// <summary>图标文件路径（纯字符串计算，不做 IO；文件由 <see cref="EnsureExtracted"/> 在启动时释放）。</summary>
     public static string PathOf(string name) => System.IO.Path.Combine(Dir, name + ".ico");

@@ -23,7 +23,7 @@ extern bool g_isExplorer;          // 宿主进程是 explorer.exe
 extern volatile LONG g_objCount;   // 存活的 COM 对象数
 extern volatile LONG g_proxyAlive; // 代理线程是否存活
 
-// ---------- 日志（%AppData%\XkDesk\logs\shellext.log） ----------
+// ---------- 日志（<数据根>\logs\shellext.log） ----------
 void Log(const wchar_t* fmt, ...);
 
 // ---------- 字符串 ----------

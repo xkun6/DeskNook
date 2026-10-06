@@ -81,7 +81,8 @@ $Script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $Script:OutDir   = Join-Path $PSScriptRoot 'out'
 if (-not (Test-Path $Script:OutDir)) { New-Item -ItemType Directory -Path $Script:OutDir | Out-Null }
 $Script:ExePath  = Join-Path $Script:RepoRoot 'src\XkDesk\bin\Release\net9.0-windows\XkDesk.exe'
-$Script:LogPath  = Join-Path $env:APPDATA 'XkDesk\logs\xkdesk.log'
+$Script:DataDir  = Join-Path (Split-Path $Script:ExePath -Parent) 'data'   # 数据一律在程序目录下的 data
+$Script:LogPath  = Join-Path $Script:DataDir 'logs\xkdesk.log'
 $Script:DesktopDir = [Environment]::GetFolderPath('Desktop')
 $Script:Results  = New-Object System.Collections.ArrayList
 

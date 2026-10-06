@@ -4,7 +4,7 @@ using XkDesk.Model;
 
 namespace XkDesk.Services;
 
-/// <summary>设置持久化：%AppData%\XkDesk\settings.json，先写临时文件再替换；损坏时备份并回退默认。</summary>
+/// <summary>设置持久化：data\settings.json，先写临时文件再替换；损坏时备份并回退默认。</summary>
 public sealed class SettingsStore
 {
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
@@ -13,7 +13,7 @@ public sealed class SettingsStore
 
     public SettingsStore(string? path = null)
     {
-        FilePath = path ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "XkDesk", "settings.json");
+        FilePath = path ?? AppPaths.Settings;
     }
 
     public AppSettings Load()

@@ -257,7 +257,7 @@ public static class AutoOrganizer
     }
 }
 
-/// <summary>撤销记录持久化：%AppData%\XkDesk\organize-undo.json（程序重启后仍可撤销）。</summary>
+/// <summary>撤销记录持久化：data\organize-undo.json（程序重启后仍可撤销）。</summary>
 public sealed class OrganizeUndoStore
 {
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
@@ -266,7 +266,7 @@ public sealed class OrganizeUndoStore
 
     public OrganizeUndoStore(string? path = null)
     {
-        FilePath = path ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "XkDesk", "organize-undo.json");
+        FilePath = path ?? AppPaths.OrganizeUndo;
     }
 
     public OrganizeUndo? Load()

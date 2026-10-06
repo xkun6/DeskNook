@@ -4,7 +4,7 @@
 $Script:HBackupDir = Join-Path $env:TEMP 'xk-h-backup'
 $Script:RunKeyPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 
-# ---------- 备份/恢复：%AppData%\XkDesk\ 下所有 json + Run\XkDesk 注册表值 ----------
+# ---------- 备份/恢复：程序目录 data\ 下所有 json + Run\XkDesk 注册表值 ----------
 function Backup-HState {
     if (Test-Path $Script:HBackupDir) { return }  # 上次中断遗留的备份不覆盖
     New-Item -ItemType Directory -Path $Script:HBackupDir | Out-Null

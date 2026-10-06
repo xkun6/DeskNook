@@ -16,7 +16,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- 应用图标与菜单线条图标：嵌入资源，运行时释放到 %LocalAppData%/XkDesk/icons -->
+    <!-- 应用图标与菜单线条图标：嵌入资源，运行时释放到 data/icons -->
     <EmbeddedResource Include="Assets/*.ico" LogicalName="Assets.%(Filename)%(Extension)" />
   </ItemGroup>
 

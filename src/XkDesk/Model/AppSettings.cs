@@ -15,7 +15,7 @@ public sealed class OrganizeRule
     public OrganizeRule Clone() => new(Name, Extensions.ToArray());
 }
 
-/// <summary>应用设置：%AppData%\XkDesk\settings.json。</summary>
+/// <summary>应用设置：data\settings.json。</summary>
 public sealed class AppSettings
 {
     public int Version { get; set; } = 1;

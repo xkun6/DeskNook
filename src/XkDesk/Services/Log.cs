@@ -3,12 +3,11 @@ using System.Text;
 
 namespace XkDesk.Services;
 
-/// <summary>极简文件日志：%AppData%\XkDesk\logs\xkdesk.log，线程安全，追加写，永不抛异常。</summary>
+/// <summary>极简文件日志：data\logs\xkdesk.log，线程安全，追加写，永不抛异常。</summary>
 internal static class Log
 {
     private static readonly object Gate = new();
-    private static readonly string FilePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "XkDesk", "logs", "xkdesk.log");
+    private static readonly string FilePath = Path.Combine(AppPaths.LogsDir, "xkdesk.log");
 
     public static void Info(string message) => Write("INFO ", message);
 
