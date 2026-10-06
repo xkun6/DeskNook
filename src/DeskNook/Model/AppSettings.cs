@@ -50,7 +50,8 @@ public sealed class AppSettings
     public static List<OrganizeRule> DefaultRules() => new()
     {
         new("文件夹", OrganizeRule.FolderToken),
-        new("快捷方式与程序", "lnk", "url", "exe", "msi", "msix", "appx", "bat", "cmd", "appref-ms", "com", "ps1", "vbs", "jar"),
+        new("快捷方式", "lnk", "url", "appref-ms"),
+        new("程序", "exe", "msi", "msix", "appx", "bat", "cmd", "com", "ps1", "vbs", "jar"),
         new("文档", "doc", "docx", "dot", "dotx", "xls", "xlsx", "xlsm", "ppt", "pptx", "pdf", "txt", "md", "wps", "et", "dps", "csv", "rtf", "odt", "ods", "odp", "epub"),
         new("图片", "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "ico", "tif", "tiff", "heic", "avif", "psd", "raw"),
         new("视频", "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "mpg", "mpeg", "rmvb", "3gp"),

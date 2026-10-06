@@ -102,7 +102,8 @@
   "LogRetentionDays": 7,
   "OrganizeRules": [
     { "Name": "文件夹", "Extensions": [ "<dir>" ] },
-    { "Name": "快捷方式与程序", "Extensions": [ "lnk", "url", "exe", "msi" ] },
+    { "Name": "快捷方式", "Extensions": [ "lnk", "url" ] },
+    { "Name": "程序", "Extensions": [ "exe", "msi" ] },
     { "Name": "其他", "Extensions": [ "*" ] }
   ]
 }

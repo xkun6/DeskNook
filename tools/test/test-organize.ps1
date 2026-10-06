@@ -133,7 +133,7 @@ try {
         Move-Mouse ($Screen.Width - 5) ($Screen.Height - 5) 300
         Save-Screen -Name c-02-organized | Out-Null
         $expect = @{ 'xk-test-a.txt' = '文档'; 'xk-test-b.docx' = '文档'; 'xk-test-c.png' = '图片'; 'xk-test-d.mp4' = '视频';
-                     'xk-test-e.mp3' = '音频'; 'xk-test-f.zip' = '压缩包'; 'xk-test-g.lnk' = '快捷方式与程序'; 'xk-test-noext' = '其他'; $DirName = '文件夹' }
+                     'xk-test-e.mp3' = '音频'; 'xk-test-f.zip' = '压缩包'; 'xk-test-g.lnk' = '快捷方式'; 'xk-test-noext' = '其他'; $DirName = '文件夹' }
         foreach ($k in $expect.Keys) {
             $b = Get-BoxOfKey $k
             Assert-True ($b -ne $null) "$k 没进格子"
