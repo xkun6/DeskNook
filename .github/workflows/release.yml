@@ -95,11 +95,19 @@ jobs:
             artifacts/*-portable.zip
           if-no-files-found: error
 
+      - name: 生成发布说明
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $notes = (Get-Content .github/release-notes.md -Raw -Encoding utf8).Replace('{{VERSION}}', '${{ steps.ver.outputs.version }}')
+          Set-Content -Path release-notes.md -Value $notes -Encoding utf8NoBOM
+
       - name: 发布 Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
         with:
           name: 桌面整理 v${{ steps.ver.outputs.version }}
+          body_path: release-notes.md
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           files: |

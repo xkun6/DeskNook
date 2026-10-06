@@ -40,10 +40,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/publish.ps1   # 发布
 
 ## 安装包
 
-WiX v5 生成的 per-machine MSI：自带 .NET 运行时（self-contained，win-x64）、默认装到 `C:\Program Files\DeskNook`（需要管理员，会弹 UAC；安装界面可改目录）、界面为简体中文。WiX 通过 NuGet 还原，`dotnet build` 即可，不需要全局安装。
+WiX v5 生成的 per-machine MSI，提供两种：自带 .NET 运行时（self-contained，win-x64，推荐）与不带运行时（依赖框架，需先装 .NET 9 桌面运行时，缺失时安装包会提示并停止）。默认装到 `C:\Program Files\DeskNook`（需要管理员，会弹 UAC；安装界面可改目录）、界面为简体中文。WiX 通过 NuGet 还原，`dotnet build` 即可，不需要全局安装。
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File tools/build-installer.ps1   # 输出 artifacts\DeskNook-<版本>-x64.msi
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/build-installer.ps1   # 一次输出 4 个文件：含/不含运行时的 MSI 与便携版（见“发布”一节）
 ```
 
 版本号取自 `src/DeskNook/DeskNook.csproj` 的 `<Version>`；升级安装（MajorUpgrade）靠固定的 UpgradeCode，旧版会被替换，已安装更新版本时拒绝降级。
@@ -60,9 +60,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/build-installer.ps1   
 完成页「运行桌面整理」默认勾选，经 `explorer.exe` 间接启动，保证程序以普通用户身份而非提权身份运行（静默安装不会启动程序）。
 
 ```powershell
-msiexec /i DeskNook-1.0.0-x64.msi /qn                                   # 静默安装（两项默认开启）
-msiexec /i DeskNook-1.0.0-x64.msi AUTOSTART=0 DESKTOPSHORTCUT=0 /qn     # 静默安装，不自启、无桌面快捷方式
-msiexec /x DeskNook-1.0.0-x64.msi /qn                                   # 静默卸载
+msiexec /i DeskNook-1.0.1-x64.msi /qn                                   # 静默安装（两项默认开启）
+msiexec /i DeskNook-1.0.1-x64.msi AUTOSTART=0 DESKTOPSHORTCUT=0 /qn     # 静默安装，不自启、无桌面快捷方式
+msiexec /x DeskNook-1.0.1-x64.msi /qn                                   # 静默卸载
 ```
 
 卸载 / 升级时会先执行 `DeskNook.exe --exit` 让运行中的实例退出（恢复系统桌面图标）；真正卸载时再执行 `--unregister`，删除右键菜单扩展注册和开机自启项，升级则保留。数据不随卸载删除：装在 Program Files 下时数据在 `%AppData%\DeskNook`，需要时手动删除。
@@ -80,8 +80,12 @@ git push origin v1.0.1
 
 推送 `v*` tag 后，工作流会以 tag 版本（`v1.0.1` → `1.0.1`）覆盖 csproj 的 `<Version>` 构建，校验 `DeskNook.exe` 文件版本与 tag 一致，并创建 GitHub Release（自动生成更新说明）。tag 带 `-`（如 `v1.2.0-beta.1`）时标记为预发布，文件版本取 `-` 前的 `1.2.0`。Release 里的文件：
 
-- `DeskNook-<版本>-x64.msi`：安装包（自带 .NET 运行时，per-machine，需要管理员）。
+- `DeskNook-<版本>-x64.msi`：安装包（自带 .NET 运行时，per-machine，需要管理员）。大多数用户选这个。
+- `DeskNook-<版本>-x64-noruntime.msi`：安装包（不带运行时，需先安装 .NET 9 桌面运行时 x64，体积小得多）。
 - `DeskNook-<版本>-x64-portable.zip`：便携版（self-contained win-x64 发布目录，不含 pdb 与 data），解压即用；Shell 扩展注册、开机自启等需由程序内设置完成，不会写入安装信息。
+- `DeskNook-<版本>-x64-noruntime-portable.zip`：便携版（不带运行时，需先安装 .NET 9 桌面运行时 x64）。
+
+怎么选：不确定就选自带运行时的（文件名不含 `noruntime`）；Release 页顶部有下载选择说明（模板 `.github/release-notes.md`，其后是自动生成的更新说明）。
 
 本地模拟：`tools/build-installer.ps1 -Version 1.0.1`（可加 `-NameSuffix -ci.1` 只改文件名）。
 

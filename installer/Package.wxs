@@ -1,7 +1,8 @@
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util" xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx">
 
   <!--
-    桌面整理（DeskNook）安装包：per-machine、x64、自带 .NET 运行时。
+    桌面整理（DeskNook）安装包：per-machine、x64。两种变体：默认自带 .NET 运行时；
+    NoRuntime=true 时为依赖框架版，安装前检查 .NET 9 桌面运行时（x64）。
     版本号取自 DeskNook.exe 的文件版本（csproj 的 Version），UpgradeCode 固定不变，升级靠 MajorUpgrade。
   -->
   <Package Name="桌面整理"
@@ -11,7 +12,13 @@
            Language="2052"
            Scope="perMachine">
 
-    <MajorUpgrade DowngradeErrorMessage="已安装更新版本，无法安装此版本。" />
+    <!-- 同一版本的“自带运行时/不带运行时”两种安装包 ProductCode 不同，AllowSameVersionUpgrades 允许互相升级替换，避免并存两份安装记录 -->
+    <MajorUpgrade DowngradeErrorMessage="已安装更新版本，无法安装此版本。" AllowSameVersionUpgrades="yes" />
+<?if $(NoRuntime) = "true" ?>
+    <!-- 依赖框架版：检查 .NET 9 桌面运行时（x64），缺失则停止安装（与应用默认的 Minor 前滚策略一致） -->
+    <netfx:DotNetCompatibilityCheck Property="DOTNETDESKTOP9" RuntimeType="desktop" Platform="x64" Version="9.0.0" RollForward="minor" />
+    <Launch Condition="Installed OR DOTNETDESKTOP9 = &quot;0&quot;" Message="此版本不含 .NET 运行时，需要先安装 .NET 9 桌面运行时（x64）：https://dotnet.microsoft.com/download/dotnet/9.0 。也可以改用自带运行时的安装包（文件名不含 noruntime）。" />
+<?endif?>
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
     <!-- 添加/删除程序：显示名取 ProductName，图标用应用 ico；保留“卸载”，不提供“修改” -->
@@ -34,7 +41,7 @@
       </Directory>
     </StandardDirectory>
 
-    <!-- 发布目录全部文件（运行时 + 程序集 + DeskNookShellExt.dll），排除 pdb；data/ 由 build-installer.ps1 保证不在发布目录里 -->
+    <!-- 发布目录全部文件（自带运行时版含 .NET 运行时；程序集 + DeskNookShellExt.dll），排除 pdb；data/ 由 build-installer.ps1 保证不在发布目录里 -->
     <ComponentGroup Id="PublishFiles" Directory="INSTALLFOLDER">
       <Files Include="$(PublishDir)**">
         <Exclude Files="$(PublishDir)DeskNook.exe" />

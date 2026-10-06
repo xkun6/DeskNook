@@ -1,6 +1,6 @@
 # 构建与发布
 
-对应文件：`src/DeskNook/DeskNook.csproj`、`src/DeskNookShellExt/DeskNookShellExt.vcxproj`、`tools/publish.ps1`、`tools/build-installer.ps1`、`tools/gen-icons.ps1`、`installer/Package.wxs`、`installer/DeskNook.Installer.wixproj`、`.github/workflows/release.yml`。使用者向的命令示例在根 `README.md`，这里写原理与坑。
+对应文件：`src/DeskNook/DeskNook.csproj`、`src/DeskNookShellExt/DeskNookShellExt.vcxproj`、`tools/publish.ps1`、`tools/build-installer.ps1`、`tools/gen-icons.ps1`、`installer/Package.wxs`、`installer/DeskNook.Installer.wixproj`、`.github/workflows/release.yml`、`.github/release-notes.md`。使用者向的命令示例在根 `README.md`，这里写原理与坑。
 
 ## 本地构建
 
@@ -60,22 +60,31 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/publish.ps1 [-SingleFi
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/build-installer.ps1 [-Version x.y.z] [-NameSuffix -ci.1]
 ```
 
-步骤：
+一次构建两种变体、共 4 个产物；`tools/build-installer.ps1:Build-Variant` 对每个变体各跑一遍。先确定版本号（`-Version` 或 csproj 的 `<Version>`），再依次：
 
-1. 调 `publish.ps1 -SelfContained -Output artifacts\publish [-Version]`；
-2. 自检发布目录：必须有 `DeskNook.exe`、`DeskNookShellExt.dll`、`coreclr.dll`（证明是 self-contained），不得有 `data/`；
-3. 版本号 = `-Version` 或 csproj 的 `<Version>`；
-4. `dotnet build installer\DeskNook.Installer.wixproj -c Release -p:ProductVersion=… -p:AppPublishDir=…`；
-5. 校验 `DeskNook.exe` 的**文件版本**与期望版本一致（MSI 的 `Version` 取自 exe 文件版本）；
-6. 输出 `artifacts\DeskNook-<版本>-x64.msi`；`-NameSuffix` 只改文件名（如 `-ci.12`）；
-7. 便携版 `artifacts\DeskNook-<版本><后缀>-x64-portable.zip`：发布目录（排除 `*.pdb`、不含 `data/`）压缩。
+| 变体 | 发布 | 发布目录 | 自检（`Build-Variant`） | 文件标签 |
+|---|---|---|---|---|
+| 自带运行时 | `publish.ps1 -SelfContained -Output artifacts\publish` | `artifacts/publish`（CI 的“校验 exe 文件版本”读这里，名字不能变） | 必须有 `DeskNook.exe`、`DeskNookShellExt.dll`、`coreclr.dll` | `''` |
+| 不带运行时 | `publish.ps1 -Output artifacts\publish-noruntime`（依赖框架） | `artifacts/publish-noruntime` | 必须有 `DeskNook.exe`、`DeskNookShellExt.dll`、`DeskNook.runtimeconfig.json`，**不得有** `coreclr.dll` | `-noruntime` |
+
+两者都不得有 `data/`。每个变体的后续步骤：
+
+1. `dotnet build installer\DeskNook.Installer.wixproj -c Release -nologo --no-incremental -p:ProductVersion=… -p:AppPublishDir=… -p:NoRuntime=<true|false> -p:OutputName=DeskNook-<版本><后缀>-x64<标签>`。**必须 `--no-incremental`**：两次构建共用 `installer/obj`，只改全局属性时增量构建可能复用上一次的中间文件（文件清单错误）。同时脚本先删除 `installer/obj`：否则 MSBuild 的 IncrementalClean 会按上一次的 `FileListAbsolute` 删掉上一个变体已生成的 msi/wixpdb（实测第二个变体构建后第一个 MSI 消失）。`OutputName` 作为全局属性直接得到最终文件名，不再有“构建后改名”；
+2. 校验 `DeskNook.exe` 的**文件版本**与期望版本一致（MSI 的 `Version` 取自 exe 文件版本），确认 MSI 存在，打印大小；
+3. 便携版 `artifacts\DeskNook-<版本><后缀>-x64<标签>-portable.zip`：对应发布目录（排除 `*.pdb`、不含 `data/`）压缩。
+
+产物（`<后缀>` 即 `-NameSuffix`，如 `-ci.12`）：
+
+- `DeskNook-<版本><后缀>-x64.msi`、`DeskNook-<版本><后缀>-x64-portable.zip`（自带运行时）；
+- `DeskNook-<版本><后缀>-x64-noruntime.msi`、`DeskNook-<版本><后缀>-x64-noruntime-portable.zip`（依赖框架，需 .NET 9 桌面运行时）。
 
 `artifacts/`、`dist/` 都被 `.gitignore` 排除。
 
 ## MSI 设计（`installer/Package.wxs`）
 
 - `Package`：`Name="桌面整理"`、`Manufacturer="DeskNook"`、`Version="!(bind.FileVersion.DeskNook.exe)"`、`Language=2052`、`Scope=perMachine`、**`UpgradeCode="E1003CA2-7DC8-4599-8EA1-FD0D1122559E"`（永不改，改了就无法升级旧安装）**。
-- `MajorUpgrade DowngradeErrorMessage="已安装更新版本，无法安装此版本。"`：升级靠固定 UpgradeCode，旧版被替换，拒绝降级。
+- `MajorUpgrade DowngradeErrorMessage="已安装更新版本，无法安装此版本。" AllowSameVersionUpgrades="yes"`：升级靠固定 UpgradeCode，旧版被替换，拒绝降级。`AllowSameVersionUpgrades` 的原因：同一版本的“自带运行时/不带运行时”两种 MSI 的 ProductCode 不同，允许互相升级替换，避免并存两份安装记录。
+- 变体开关 `NoRuntime`：`installer/DeskNook.Installer.wixproj:NoRuntime`（默认 `false`）经 `DefineConstants` 传成 WiX 预处理变量 `$(NoRuntime)`。`Package.wxs` 里 `<?if $(NoRuntime) = "true" ?>` 内放 `netfx:DotNetCompatibilityCheck Property="DOTNETDESKTOP9" RuntimeType="desktop" Platform="x64" Version="9.0.0" RollForward="minor"`（与应用默认的 Minor 前滚策略一致）和 `Launch Condition="Installed OR DOTNETDESKTOP9 = "0""`：未安装 .NET 9 桌面运行时则提示下载链接并停止安装（已安装时跳过检查，卸载不受影响）。需要 `WixToolset.Netfx.wixext`，根元素声明 `xmlns:netfx`。
 - `MediaTemplate EmbedCab=yes`；ARP：图标 `app.ico`，`ARPNOMODIFY=1`（只有“卸载”）。
 - 目录：`ProgramFiles64Folder\DeskNook`（`INSTALLFOLDER`，界面可改目录）。`DeskNook.exe` 单独成 Component（`Bitness=always64`，`KeyPath`），因为快捷方式与自定义动作都引用它；其余用 `<Files Include="$(PublishDir)**">` 通配收集，排除 exe 与 `*.pdb`。**data 目录不在安装包里**，卸载也不删数据。
 - 快捷方式：开始菜单（固定创建，all users）；桌面快捷方式受 `DESKTOPSHORTCUT=1` 控制。两个组件的 KeyPath 是 `HKLM\Software\DeskNook` 下的 DWORD（见 ICE 说明）。
@@ -105,9 +114,9 @@ HKCU 属于用户而不是 per-machine 的安装服务，所以开机自启和 S
 
 ### 被屏蔽的 ICE
 
-`installer/DeskNook.Installer.wixproj`：`<SuppressIces>ICE38;ICE43;ICE57</SuppressIces>`。原因（项目文件注释）：快捷方式放在 `ProgramMenuFolder`/`DesktopFolder`（per-machine 下解析为 All Users 目录），ICE 仍按“用户配置文件目录”的要求要 HKCU 键值，属于已知误报；组件键值故意用 HKLM 以与 per-machine 安装一致。
+`installer/DeskNook.Installer.wixproj`：`<SuppressIces>ICE38;ICE43;ICE57;ICE61</SuppressIces>`。ICE38/43/57 的原因（项目文件注释）：快捷方式放在 `ProgramMenuFolder`/`DesktopFolder`（per-machine 下解析为 All Users 目录），ICE 仍按“用户配置文件目录”的要求要 HKCU 键值，属于已知误报；组件键值故意用 HKLM 以与 per-machine 安装一致。ICE61：`MajorUpgrade` 开了 `AllowSameVersionUpgrades`（同版本的两种变体可互相覆盖），ICE61 对此只给警告，故屏蔽。
 
-其他：`Cultures=zh-CN`；`PublishDir` 经 `DefineConstants` 传给 WiX（`$(PublishDir)`）；输出名 `DeskNook-$(ProductVersion)-x64`；扩展 `WixToolset.UI.wixext`、`WixToolset.Util.wixext`（5.0.2）。
+其他：`Cultures=zh-CN`；`PublishDir` 经 `DefineConstants` 传给 WiX（`$(PublishDir)`）；默认输出名 `DeskNook-$(ProductVersion)-x64`（`build-installer.ps1` 用 `-p:OutputName=` 覆盖）；扩展 `WixToolset.UI.wixext`、`WixToolset.Util.wixext`、`WixToolset.Netfx.wixext`（5.0.2）。
 
 ### 安装行为速查
 
@@ -128,10 +137,10 @@ HKCU 属于用户而不是 per-machine 的安装服务，所以开机自启和 S
      - tag 构建（`refs/tags/v*`）：版本 = tag 去掉 `v` 后取 `-` 之前的核心部分，必须匹配 `^\d+\.\d+\.\d+$` 否则失败（`v1.2.0-beta.1` → `1.2.0`）；传给构建的 `-Version` 就是它，**无文件名后缀**。
      - 非 tag 构建：版本沿用 csproj 的 `<Version>`，不传 `-Version`，文件名加 `-ci.<run_number>` 后缀（文件版本不变）。
   3. **测试**：`dotnet test DeskNook.sln -c Release --filter "Category!=Desktop"`（会同时编译 C++，runner 需要 VS 的 C++ 工具集）；失败时把含 `error|Failed|[FAIL]|Exception` 的行以 `::error::` 注解输出。当前没有任何测试带 `Category=Desktop` 特性，过滤是预留的（在 CI 里跑不了依赖真实桌面的测试时再标）。
-  4. **构建安装包与便携版**：`tools/build-installer.ps1 [-Version] [-NameSuffix]`，失败同样输出错误注解。
+  4. **构建安装包与便携版**：`tools/build-installer.ps1 [-Version] [-NameSuffix]`（一次产出自带/不带运行时各一个 MSI 与便携版，共 4 个文件），失败同样输出错误注解。
   5. tag 构建额外**校验 `DeskNook.exe` 文件版本**必须匹配 tag 版本（`(\.0)?` 容忍四段式）。
-  6. `upload-artifact`：名称 `DeskNook-<版本><后缀>`，包含 `artifacts/*.msi` 与 `artifacts/*-portable.zip`，缺文件则失败。
-  7. tag 构建用 `softprops/action-gh-release` 创建 Release：名称 `桌面整理 v<版本>`，自动生成更新说明；**tag 含 `-` 则 `prerelease: true`**；附件为 MSI 与便携版 zip。
+  6. `upload-artifact`：名称 `DeskNook-<版本><后缀>`，包含 `artifacts/*.msi` 与 `artifacts/*-portable.zip`（通配正好匹配上述 4 个文件），缺文件则失败。
+  7. tag 构建先“生成发布说明”：读取 `.github/release-notes.md` 模板，把 `{{VERSION}}` 替换为版本号，写成 `release-notes.md`（UTF-8 无 BOM）；再用 `softprops/action-gh-release` 创建 Release：名称 `桌面整理 v<版本>`，`body_path: release-notes.md`（固定的下载选择说明在前）加 `generate_release_notes: true`（自动生成的更新日志追加在后）；**tag 含 `-` 则 `prerelease: true`**；附件为 4 个文件（两个 MSI 与两个便携版 zip）。
 - 注意：带后缀的预发布 tag（如 `v1.2.0-beta.1`）产出的 MSI/exe 版本是 `1.2.0`，文件名里不含 `beta`，区分靠 Release 页面的预发布标记。
 - 公开仓库的 `push main` 与 PR 也会产出可下载的 Artifacts（不会创建 Release）。
 
@@ -144,7 +153,7 @@ HKCU 属于用户而不是 per-machine 的安装服务，所以开机自启和 S
    git tag v1.0.1
    git push origin v1.0.1
    ```
-4. 等工作流跑完，检查 Release 页面：MSI 与 portable zip 都在、预发布标记正确、`DeskNook.exe` 文件版本正确。
+4. 等工作流跑完，检查 Release 页面：4 个文件（两个 MSI、两个 portable zip）都在、顶部有下载选择说明、预发布标记正确、`DeskNook.exe` 文件版本正确。
 5. 手测安装/升级/卸载（见 [testing.md](testing.md) 手测清单）：MSI 在 CI 里只验证“能构建”，没有自动安装测试。
 
 本地模拟 CI：`tools/build-installer.ps1 -Version 1.0.1 -NameSuffix -ci.1`。
