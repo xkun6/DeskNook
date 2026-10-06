@@ -77,6 +77,53 @@ internal static partial class Win32
         public int fRecursive; // BOOL，保持可 blit
     }
 
+    // ---- uxtheme 未公开序号：让弹出菜单跟随系统深色模式 ----
+    [DllImport("uxtheme.dll", EntryPoint = "#135")] public static extern int SetPreferredAppMode(int mode);
+    [DllImport("uxtheme.dll", EntryPoint = "#133")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool AllowDarkModeForWindow(IntPtr hwnd, [MarshalAs(UnmanagedType.Bool)] bool allow);
+    [DllImport("uxtheme.dll", EntryPoint = "#136")] public static extern void FlushMenuThemes();
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetMenuItemInfo(IntPtr hMenu, uint item, [MarshalAs(UnmanagedType.Bool)] bool fByPosition, ref MENUITEMINFO lpmii);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MENUINFO
+    {
+        public int cbSize;
+        public uint fMask, dwStyle;
+        public uint cyMax;
+        public IntPtr hbrBack;
+        public uint dwContextHelpID;
+        public UIntPtr dwMenuData;
+    }
+
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool SetMenuInfo(IntPtr hMenu, ref MENUINFO lpcmi);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetMenuItemInfo(IntPtr hMenu, uint item, [MarshalAs(UnmanagedType.Bool)] bool fByPosition, ref MENUITEMINFO lpmii);
+
+    [DllImport("gdi32.dll")]
+    public static extern IntPtr CreateDIBSection(IntPtr hdc, ref BITMAPINFOHEADER pbmi, uint usage, out IntPtr ppvBits, IntPtr hSection, uint offset);
+
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool RemoveMenu(IntPtr hMenu, uint uPosition, uint uFlags);
+
+    [DllImport("shell32.dll")] public static extern int SHCreateDefaultContextMenu(ref DEFCONTEXTMENU pdcm, [MarshalAs(UnmanagedType.LPStruct)] Guid riid, out IntPtr ppv);
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode)] public static extern int RegOpenKeyExW(IntPtr hKey, string subKey, int options, int sam, out IntPtr result);
+    [DllImport("advapi32.dll")] public static extern int RegCloseKey(IntPtr hKey);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct SHSTOCKICONINFO
+    {
+        public uint cbSize;
+        public IntPtr hIcon;
+        public int iSysImageIndex, iIcon;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string szPath;
+    }
+
+    [DllImport("shell32.dll")] public static extern int SHGetStockIconInfo(int siid, uint flags, ref SHSTOCKICONINFO psii);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool DestroyIcon(IntPtr hIcon);
+
     // ---- user32 ----
     [DllImport("user32.dll")] public static extern IntPtr CreatePopupMenu();
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool DestroyMenu(IntPtr hMenu);

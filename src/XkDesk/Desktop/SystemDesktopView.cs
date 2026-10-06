@@ -21,8 +21,10 @@ internal sealed class SystemDesktopInfo
 /// </summary>
 internal static class SystemDesktopView
 {
-    /// <summary>取系统桌面视图的 IFolderView2（Explorer 不在时返回 null）。</summary>
-    public static IFolderView2? Acquire()
+    public static IFolderView2? Acquire() => AcquireView() as IFolderView2;
+
+    /// <summary>取系统桌面视图对象（同时实现 IShellView / IFolderView2；Explorer 不在时返回 null）。</summary>
+    public static object? AcquireView()
     {
         try
         {
@@ -42,7 +44,7 @@ internal static class SystemDesktopView
             var browser = (IShellBrowser)Marshal.GetObjectForIUnknown(pBrowser);
             Marshal.Release(pBrowser);
             if (browser.QueryActiveShellView(out var view) < 0) return null;
-            return (IFolderView2)view;
+            return view;
         }
         catch (Exception ex)
         {

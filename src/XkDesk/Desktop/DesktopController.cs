@@ -29,6 +29,11 @@ internal sealed class DesktopController : IDisposable
     private DateTime _expectNewUntil = DateTime.MinValue;
     private (string Monitor, int Col, int Row, DateTime Until)? _pendingDrop;
 
+    /// <summary>可撤销的最近一次操作名（“删除”“复制”“移动”“重命名”）；没有则为 null，此时菜单不显示“撤消”。</summary>
+    public string? UndoLabel { get; private set; }
+    private string? _pendingOp;
+    private DateTime _pendingOpUntil;
+
     public LayoutState Layout { get; private set; } = new();
     public DesktopItemSource Source { get; }
     public ShellIconCache Icons { get; }
@@ -175,6 +180,13 @@ internal sealed class DesktopController : IDisposable
     {
         _byKey = Source.Items.ToDictionary(i => i.Key, StringComparer.OrdinalIgnoreCase);
 
+        if (_pendingOp != null && DateTime.UtcNow < _pendingOpUntil &&
+            ((_pendingOp == "删除" && diff.Removed.Count > 0) || (_pendingOp != "删除" && diff.Added.Count > 0)))
+        {
+            UndoLabel = _pendingOp;
+            _pendingOp = null;
+        }
+
         foreach (var (o, n) in diff.Renamed)
         {
             LayoutReconciler.Rename(Layout, o.Key, n.Key);
@@ -317,13 +329,40 @@ internal sealed class DesktopController : IDisposable
     public void DeleteSelected(bool permanent)
     {
         var items = SelectedItems;
-        if (items.Count > 0) ShellContextMenu.InvokeVerb(items, "delete", ActiveHwnd, shift: permanent);
+        if (items.Count == 0) return;
+        if (!permanent) ArmUndo("删除");
+        ShellContextMenu.InvokeVerb(items, "delete", ActiveHwnd, shift: permanent);
     }
 
     public void CopySelected() { var i = SelectedItems; if (i.Count > 0) ShellContextMenu.InvokeVerb(i, "copy", ActiveHwnd); }
     public void CutSelected() { var i = SelectedItems; if (i.Count > 0) ShellContextMenu.InvokeVerb(i, "cut", ActiveHwnd); }
-    public void Paste() => ShellContextMenu.InvokeVerb(Array.Empty<DesktopItem>(), "paste", ActiveHwnd);
-    public void PasteShortcut() => ShellContextMenu.InvokeVerb(Array.Empty<DesktopItem>(), "pastelink", ActiveHwnd);
+    public void Paste()
+    {
+        ArmUndo(ClipboardWatcher.GetCutPaths().Count > 0 ? "移动" : "复制");
+        ShellContextMenu.InvokeVerb(Array.Empty<DesktopItem>(), "paste", ActiveHwnd);
+    }
+
+    public void PasteShortcut()
+    {
+        ArmUndo("创建快捷方式");
+        ShellContextMenu.InvokeVerb(Array.Empty<DesktopItem>(), "pastelink", ActiveHwnd);
+    }
+
+    private void ArmUndo(string op)
+    {
+        _pendingOp = op;
+        _pendingOpUntil = DateTime.UtcNow + TimeSpan.FromSeconds(20);
+    }
+
+    /// <summary>撤销：把 Explorer 的 FCIDM_SHVIEW_UNDO(0x701B) 发给系统里隐藏着的 DefView，由 Shell 的撤销栈执行。</summary>
+    public void Undo()
+    {
+        var defView = DesktopShell.FindDesktop().DefView;
+        if (defView == IntPtr.Zero) return;
+        Log.Info($"撤销：{UndoLabel}");
+        Win32.PostMessage(defView, 0x0111 /* WM_COMMAND */, (IntPtr)0x701B, IntPtr.Zero);
+        UndoLabel = null;
+    }
     public void ShowProperties() => ShellContextMenu.InvokeVerb(SelectedItems, "properties", ActiveHwnd);
 
     public void ShowMenu(IntPtr hwnd, Win32.POINT screenPoint, string monitor, IReadOnlyList<DesktopItem> items)
@@ -357,6 +396,7 @@ internal sealed class DesktopController : IDisposable
         if (res == null) return false;
 
         var newKey = res.Value.Key;
+        UndoLabel = "重命名";
         Source.AddRenameHint(key, newKey);
         LayoutReconciler.Rename(Layout, key, newKey);
         Selected.Remove(key);

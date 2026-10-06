@@ -12,7 +12,7 @@
                        TextOptions.TextFormattingMode="Display"
                        HorizontalAlignment="Center">
                 <TextBlock.Effect>
-                    <DropShadowEffect ShadowDepth="1" BlurRadius="2" Direction="315" Color="Black" Opacity="0.85"/>
+                    <DropShadowEffect ShadowDepth="1" BlurRadius="3" Direction="315" Color="Black" Opacity="1"/>
                 </TextBlock.Effect>
             </TextBlock>
         </StackPanel>

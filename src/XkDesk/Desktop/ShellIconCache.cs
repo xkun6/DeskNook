@@ -16,7 +16,7 @@ namespace XkDesk.Desktop;
 /// </summary>
 internal sealed class ShellIconCache : IDisposable
 {
-    private sealed record Request(string Key, byte[] Pidl, int Px);
+    private sealed record Request(string Key, byte[] Pidl, int Px, bool IsLink);
 
     private readonly Dispatcher _dispatcher;
     private readonly Dictionary<(string, int), BitmapSource> _cache = new();
@@ -46,7 +46,7 @@ internal sealed class ShellIconCache : IDisposable
         if (_cache.TryGetValue(k, out var hit)) { done(hit); return; }
         if (_pending.TryGetValue(k, out var waiters)) { waiters.Add(done); return; }
         _pending[k] = new List<Action<BitmapSource?>> { done };
-        _queue.Add(new Request(item.Key, item.Pidl, px));
+        _queue.Add(new Request(item.Key, item.Pidl, px, item.IsLink));
     }
 
     /// <summary>使缓存失效：key 为 null 表示全部。</summary>
@@ -69,7 +69,7 @@ internal sealed class ShellIconCache : IDisposable
         {
             var gen = _generation;
             BitmapSource? bmp = null;
-            try { bmp = LoadImage(req.Pidl, req.Px); }
+            try { bmp = LoadImage(req.Pidl, req.Px, req.IsLink); }
             catch (Exception ex) { Log.Error($"加载图标失败 {req.Key}", ex); }
 
             _dispatcher.BeginInvoke(() =>
@@ -83,7 +83,7 @@ internal sealed class ShellIconCache : IDisposable
         }
     }
 
-    private static BitmapSource? LoadImage(byte[] pidlBytes, int px)
+    private static BitmapSource? LoadImage(byte[] pidlBytes, int px, bool isLink)
     {
         var pidl = ShellApi.PidlFromBytes(pidlBytes);
         try
@@ -96,7 +96,7 @@ internal sealed class ShellIconCache : IDisposable
             {
                 if (factory.GetImage(new Win32.SIZE { cx = px, cy = px }, 0, out var hbmp) < 0 || hbmp == IntPtr.Zero)
                     return null;
-                try { return ToBitmapSource(hbmp); }
+                try { var bs = ToBitmapSource(hbmp); return isLink && bs != null ? AddLinkArrow(bs) : bs; }
                 finally { Win32.DeleteObject(hbmp); }
             }
             finally
@@ -107,6 +107,34 @@ internal sealed class ShellIconCache : IDisposable
         finally
         {
             Marshal.FreeCoTaskMem(pidl);
+        }
+    }
+
+    /// <summary>GetImage 不带快捷方式箭头：用系统“链接”图标叠加到左下角（大小约为图标的 1/3，与系统桌面一致）。</summary>
+    private static BitmapSource AddLinkArrow(BitmapSource icon)
+    {
+        var info = new Win32.SHSTOCKICONINFO { cbSize = (uint)Marshal.SizeOf<Win32.SHSTOCKICONINFO>() };
+        // SIID_LINK = 29；SHGSI_ICON | SHGSI_LARGEICON
+        if (Win32.SHGetStockIconInfo(29, 0x100 | 0x0, ref info) != 0 || info.hIcon == IntPtr.Zero) return icon;
+        try
+        {
+            var arrow = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(info.hIcon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+            var w = icon.PixelWidth;
+            var dv = new DrawingVisual();
+            RenderOptions.SetBitmapScalingMode(dv, BitmapScalingMode.HighQuality);
+            using (var dc = dv.RenderOpen())
+            {
+                dc.DrawImage(icon, new Rect(0, 0, w, icon.PixelHeight));
+                dc.DrawImage(arrow, new Rect(0, icon.PixelHeight - w * 0.65, w * 0.65, w * 0.65));
+            }
+            var rtb = new RenderTargetBitmap(w, icon.PixelHeight, 96, 96, PixelFormats.Pbgra32);
+            rtb.Render(dv);
+            rtb.Freeze();
+            return rtb;
+        }
+        finally
+        {
+            Win32.DestroyIcon(info.hIcon);
         }
     }
 

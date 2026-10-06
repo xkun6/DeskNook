@@ -23,6 +23,9 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // 菜单深色模式（须在创建任何窗口前）：AllowDark = 跟随系统设置，与 Explorer 一致
+        try { Win32.SetPreferredAppMode(1); Win32.FlushMenuThemes(); }
+        catch (Exception ex) { Log.Info($"设置菜单深色模式失败（忽略）：{ex.Message}"); }
         base.OnStartup(e);
 
         // XkDesk.exe --exit：通知已运行的实例退出（自动化测试用），自己不启动

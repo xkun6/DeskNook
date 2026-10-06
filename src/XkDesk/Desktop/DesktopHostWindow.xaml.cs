@@ -89,6 +89,7 @@ public partial class DesktopHostWindow : Window
         if (_attach == AttachMode.Owner) AttachAsOwner();
         else AttachAsChild();
 
+        try { Win32.AllowDarkModeForWindow(_hwnd, true); } catch { /* 忽略 */ }
         _surface.AttachWindow(_hwnd);
         _dropTarget = new DesktopDropTarget(_controller, _surface, _hwnd);
 

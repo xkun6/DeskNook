@@ -357,6 +357,9 @@ internal sealed class DesktopSurface : Canvas
             case Key.X when ctrl:
                 _c.CutSelected();
                 return true;
+            case Key.Z when ctrl:
+                if (_c.UndoLabel != null) _c.Undo();
+                return true;
             case Key.V when ctrl:
                 _c.Paste();
                 return true;

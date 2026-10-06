@@ -21,12 +21,15 @@ internal sealed class MenuContext
     public string? Verb { get; set; }
 }
 
-internal enum MenuPosition { Top, Bottom }
+/// <summary>Top = 在 Shell 菜单项之前；AfterRefresh = 在“刷新”后的分隔线之后；BeforeNew = 在“新建”子菜单（及其前面的分隔线）之前；Bottom = 末尾。</summary>
+internal enum MenuPosition { Top, AfterRefresh, BeforeNew, Bottom }
 
 /// <summary>一个自定义菜单项。Children 非空则为子菜单；IsSeparator 为分隔线。</summary>
 internal sealed class CustomMenuItem
 {
     public string Title { get; init; } = "";
+    /// <summary>动态标题；非 null 时优先于 Title。</summary>
+    public Func<MenuContext, string>? DynamicTitle { get; init; }
     public MenuPosition Position { get; init; } = MenuPosition.Bottom;
     /// <summary>适用条件；null = 总是出现。</summary>
     public Func<MenuContext, bool>? Applies { get; init; }
@@ -87,15 +90,20 @@ internal static class MenuExtensions
         Sep(MenuPosition.Top, c => c.IsBackground),
         new()
         {
-            Title = "粘贴(&P)", Position = MenuPosition.Top, Applies = c => c.IsBackground,
+            Title = "粘贴(&P)", Position = MenuPosition.AfterRefresh, Applies = c => c.IsBackground,
             Enabled = _ => ClipboardHasFiles(), Handler = c => c.Controller.Paste(),
         },
         new()
         {
-            Title = "粘贴快捷方式(&S)", Position = MenuPosition.Top, Applies = c => c.IsBackground,
+            Title = "粘贴快捷方式(&S)", Position = MenuPosition.AfterRefresh, Applies = c => c.IsBackground,
             Enabled = _ => ClipboardHasFiles(), Handler = c => c.Controller.PasteShortcut(),
         },
-        Sep(MenuPosition.Top, c => c.IsBackground),
+        // 撤销：和 Explorer 一样，只有存在可撤销操作时才出现
+        new()
+        {
+            Title = "", Position = MenuPosition.AfterRefresh, Applies = c => c.IsBackground && c.Controller.UndoLabel != null,
+            DynamicTitle = c => $"撤消 {c.Controller.UndoLabel}(&U)	Ctrl+Z", Handler = c => c.Controller.Undo(),
+        },
 
         // ---- 空白处：末尾 退出（阶段 4 托盘做好后移除）----
         Sep(MenuPosition.Bottom, c => c.IsBackground),

@@ -102,6 +102,26 @@ internal interface IShellBrowser
     [PreserveSig] int QueryActiveShellView([MarshalAs(UnmanagedType.IUnknown)] out object ppshv);
 }
 
+[ComImport, Guid("000214E3-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IShellView
+{
+    // IOleWindow
+    [PreserveSig] int GetWindow(out IntPtr phwnd);
+    [PreserveSig] int ContextSensitiveHelp(bool fEnterMode);
+    // IShellView
+    [PreserveSig] int TranslateAccelerator(IntPtr pmsg);
+    [PreserveSig] int EnableModeless(bool fEnable);
+    [PreserveSig] int UIActivate(uint uState);
+    [PreserveSig] int Refresh();
+    [PreserveSig] int CreateViewWindow();
+    [PreserveSig] int DestroyViewWindow();
+    [PreserveSig] int GetCurrentInfo();
+    [PreserveSig] int AddPropertySheetPages();
+    [PreserveSig] int SaveViewState();
+    [PreserveSig] int SelectItem(IntPtr pidlItem, uint uFlags);
+    [PreserveSig] int GetItemObject(uint uItem, [MarshalAs(UnmanagedType.LPStruct)] Guid riid, out IntPtr ppv);
+}
+
 /// <summary>COM 的 IServiceProvider（System.IServiceProvider 同名，所以加 Com 后缀）。</summary>
 [ComImport, Guid("6D5140C1-7436-11CE-8034-00AA006009FA"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IServiceProviderCom
@@ -140,7 +160,7 @@ internal interface IFolderView2
     [PreserveSig] int GetDefaultSpacing(out ItemPoint ppt);
     [PreserveSig] int GetAutoArrange();
     [PreserveSig] int SelectItem();
-    [PreserveSig] int SelectAndPositionItems();
+    [PreserveSig] int SelectAndPositionItems(uint cidl, [MarshalAs(UnmanagedType.LPArray)] IntPtr[] apidl, IntPtr apt, uint dwFlags);
     // IFolderView2
     [PreserveSig] int SetGroupBy();
     [PreserveSig] int GetGroupBy();
@@ -201,6 +221,20 @@ internal interface IDropTargetHelper
     [PreserveSig] int DragOver(ref Win32.POINT ppt, uint dwEffect);
     [PreserveSig] int Drop([MarshalAs(UnmanagedType.Interface)] System.Runtime.InteropServices.ComTypes.IDataObject pDataObject, ref Win32.POINT ppt, uint dwEffect);
     [PreserveSig] int Show(bool fShow);
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct DEFCONTEXTMENU
+{
+    public IntPtr hwnd;
+    public IntPtr pcmcb;
+    public IntPtr pidlFolder;
+    public IntPtr psf;
+    public uint cidl;
+    public IntPtr apidl;
+    public IntPtr punkAssociationInfo;
+    public uint cKeys;
+    public IntPtr aKeys;
 }
 
 /// <summary>Shell 常量与 PIDL / 名称辅助。</summary>
