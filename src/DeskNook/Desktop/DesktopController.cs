@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Threading;
@@ -85,6 +86,8 @@ internal sealed class DesktopController : IDisposable
     public event Action<string?>? IconInvalidated;
     public event Action? CutStateChanged;
     public event Action<string>? RenameRequested;
+    /// <summary>“新建”路径投递 RenameRequested 的时刻（Stopwatch 时间戳），订阅者读后清零，仅用于诊断排队耗时；0 表示非新建路径（如 F2）。</summary>
+    internal long RenamePostedAt;
     /// <summary>请求原位重命名某个格子的标题（参数为格子 Id）。</summary>
     public event Action<string>? BoxRenameRequested;
     /// <summary>DeskNook 自己的图标和格子整体显示/隐藏状态变化。</summary>
@@ -303,7 +306,10 @@ internal sealed class DesktopController : IDisposable
         ItemsChanged?.Invoke();
         SelectionChanged?.Invoke();
         if (renameKey != null)
+        {
+            RenamePostedAt = Stopwatch.GetTimestamp();
             _dispatcher.BeginInvoke(DispatcherPriority.Background, () => RenameRequested?.Invoke(renameKey));
+        }
     }
 
     public MonitorGrid? GridOf(string monitor) => Grids.FirstOrDefault(g => g.Name == monitor);
@@ -428,7 +434,10 @@ internal sealed class DesktopController : IDisposable
         ItemsChanged?.Invoke();
         SelectionChanged?.Invoke();
         if (renameKey != null)
+        {
+            RenamePostedAt = Stopwatch.GetTimestamp();
             _dispatcher.BeginInvoke(DispatcherPriority.Background, () => RenameRequested?.Invoke(renameKey));
+        }
     }
 
     /// <summary>用户在“新建”菜单里点了命令：数秒内出现的新项自动选中并重命名。</summary>

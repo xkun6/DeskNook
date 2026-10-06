@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -257,8 +258,11 @@ internal sealed class DesktopSurface : Canvas
     {
         ctl.NeedsIcon = false;
         ctl.IconPx = px;
+        var requested = Stopwatch.GetTimestamp();
         _c.Icons.Get(item, px, bmp =>
         {
+            var iconMs = (long)Stopwatch.GetElapsedTime(requested).TotalMilliseconds;
+            if (iconMs > 500) Log.Info($"图标加载耗时 {iconMs} ms：{item.Key}");
             if (bmp == null) { ctl.NeedsIcon = true; return; }
             if (_controls.TryGetValue(item.Key, out var cur) && cur == ctl) ctl.SetIcon(bmp);
         });
@@ -606,7 +610,13 @@ internal sealed class DesktopSurface : Canvas
     private void BringToForeground()
     {
         _c.ActiveHwnd = _hwnd;
-        if (Win32.GetForegroundWindow() != _hwnd) Win32.SetForegroundWindow(_hwnd);
+        if (Win32.GetForegroundWindow() != _hwnd)
+        {
+            var t0 = Stopwatch.GetTimestamp();
+            var ok = Win32.SetForegroundWindow(_hwnd);
+            var ms = (long)Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
+            if (ms > 100) Log.Info($"SetForegroundWindow 耗时 {ms} ms，返回 {ok}");
+        }
         if (!IsKeyboardFocusWithin) Focus();
     }
 
@@ -669,6 +679,10 @@ internal sealed class DesktopSurface : Canvas
 
     private void OnRenameRequested(string key)
     {
+        var tStart = Stopwatch.GetTimestamp();
+        var posted = _c.RenamePostedAt;
+        _c.RenamePostedAt = 0;
+        var queueMs = posted == 0 ? -1 : (long)Stopwatch.GetElapsedTime(posted, tStart).TotalMilliseconds;
         if (!_controls.TryGetValue(key, out var ctl)) return;
         EndRename(commit: false);
 
@@ -707,14 +721,24 @@ internal sealed class DesktopSurface : Canvas
         };
         box.LostKeyboardFocus += (_, _) => EndRename(commit: true);
 
+        var fg = Win32.GetForegroundWindow();
+        Win32.GetWindowThreadProcessId(fg, out var fgPid);
+        var tFg = Stopwatch.GetTimestamp();
         BringToForeground();
+        var tFocus = Stopwatch.GetTimestamp();
         box.Focus();
         Keyboard.Focus(box);
+        var tEnd = Stopwatch.GetTimestamp();
         var name = item.EditName;
         var dot = name.LastIndexOf('.');
         if (!item.IsFolder && item.FilePath != null && dot > 0) box.Select(0, dot);
         else box.SelectAll();
-        Log.Info($"原位重命名框已显示：{key} 键盘焦点={box.IsKeyboardFocused}");
+        var queueText = queueMs < 0 ? "排队 -（非新建路径）ms" : $"排队 {queueMs} ms";
+        Log.Info($"原位重命名框已显示：{key} 键盘焦点={box.IsKeyboardFocused}（{queueText}，" +
+                 $"抢前台 {(long)Stopwatch.GetElapsedTime(tFg, tFocus).TotalMilliseconds} ms，" +
+                 $"聚焦 {(long)Stopwatch.GetElapsedTime(tFocus, tEnd).TotalMilliseconds} ms，" +
+                 $"总 {(long)Stopwatch.GetElapsedTime(tStart, Stopwatch.GetTimestamp()).TotalMilliseconds} ms，" +
+                 $"调用前前台=0x{fg.ToInt64():X}(进程Id {fgPid})）");
     }
 
     private void EndRename(bool commit)
