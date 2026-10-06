@@ -35,14 +35,19 @@
   </PropertyGroup>
 
   <Target Name="BuildShellExt" BeforeTargets="BeforeBuild">
+    <!-- 优先 VS2022（17.x），找不到再用任意更新版本（如 VS2026 18.x）；工具集由 vcxproj 取 DefaultPlatformToolset -->
     <Exec Command="&quot;$(VsWhereExe)&quot; -version &quot;[17.0,18.0)&quot; -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath"
           ConsoleToMSBuild="true" StandardOutputImportance="low" Condition="Exists('$(VsWhereExe)')">
+      <Output TaskParameter="ConsoleOutput" PropertyName="VsInstallPath" />
+    </Exec>
+    <Exec Command="&quot;$(VsWhereExe)&quot; -latest -version &quot;[17.0,)&quot; -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath"
+          ConsoleToMSBuild="true" StandardOutputImportance="low" Condition="Exists('$(VsWhereExe)') And '$(VsInstallPath)' == ''">
       <Output TaskParameter="ConsoleOutput" PropertyName="VsInstallPath" />
     </Exec>
     <PropertyGroup>
       <VsMsBuild>$(VsInstallPath)\MSBuild\Current\Bin\MSBuild.exe</VsMsBuild>
     </PropertyGroup>
-    <Error Condition="!Exists('$(VsMsBuild)') And !Exists('$(ShellExtDll)')" Text="找不到带 C++ 工具集的 Visual Studio 2022，无法编译 DeskNookShellExt.dll" />
+    <Error Condition="!Exists('$(VsMsBuild)') And !Exists('$(ShellExtDll)')" Text="未找到带 C++ 工具集的 Visual Studio（需要 VS2022 或更新版本），无法编译 DeskNookShellExt.dll" />
     <Exec Condition="Exists('$(VsMsBuild)')" Command="&quot;$(VsMsBuild)&quot; &quot;$(ShellExtProj)&quot; -p:Configuration=Release -p:Platform=x64 -nologo -v:q -clp:ErrorsOnly" />
   </Target>
 

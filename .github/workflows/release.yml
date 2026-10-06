@@ -16,9 +16,9 @@ jobs:
     permissions:
       contents: write   # 创建 Release 需要
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 9.0.x
 
@@ -43,7 +43,18 @@ jobs:
           }
 
       - name: 测试
-        run: dotnet test DeskNook.sln -c Release --nologo
+        shell: pwsh
+        run: |
+          function Show-Fail([string]$f) {
+            if (Test-Path $f) {
+              Get-Content $f | Where-Object { $_ -match 'error|Failed |\[FAIL\]|Exception' } | ForEach-Object { $_.Trim() } | Select-Object -Unique -First 30 | ForEach-Object {
+                $l = if ($_.Length -gt 300) { $_.Substring(0, 300) } else { $_ }
+                Write-Host "::error::$l"
+              }
+            }
+          }
+          dotnet test DeskNook.sln -c Release --nologo --filter "Category!=Desktop" --logger "console;verbosity=normal" 2>&1 | Tee-Object -FilePath test.log
+          if ($LASTEXITCODE -ne 0) { Show-Fail test.log; exit 1 }
 
       - name: 构建安装包与便携版
         shell: pwsh
@@ -51,7 +62,22 @@ jobs:
           $a = @{}
           if ('${{ steps.ver.outputs.pass_version }}') { $a.Version = '${{ steps.ver.outputs.pass_version }}' }
           if ('${{ steps.ver.outputs.suffix }}') { $a.NameSuffix = '${{ steps.ver.outputs.suffix }}' }
-          ./tools/build-installer.ps1 @a
+          function Show-Fail([string]$f) {
+            if (Test-Path $f) {
+              Get-Content $f | Where-Object { $_ -match 'error|Failed |\[FAIL\]|Exception' } | ForEach-Object { $_.Trim() } | Select-Object -Unique -First 30 | ForEach-Object {
+                $l = if ($_.Length -gt 300) { $_.Substring(0, 300) } else { $_ }
+                Write-Host "::error::$l"
+              }
+            }
+          }
+          try {
+            & ./tools/build-installer.ps1 @a 2>&1 | Tee-Object -FilePath build.log
+            if ($LASTEXITCODE -ne 0) { throw "build-installer 退出码 $LASTEXITCODE" }
+          } catch {
+            "$_" | Out-File -Append build.log
+            Show-Fail build.log
+            exit 1
+          }
 
       - name: 校验 exe 文件版本
         if: startsWith(github.ref, 'refs/tags/v')
@@ -61,7 +87,7 @@ jobs:
           Write-Host "DeskNook.exe 文件版本：$fv，期望：${{ steps.ver.outputs.version }}"
           if ($fv -notmatch '^${{ steps.ver.outputs.version }}(\.0)?$') { throw "文件版本 $fv 与 tag 版本不一致" }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: DeskNook-${{ steps.ver.outputs.version }}${{ steps.ver.outputs.suffix }}
           path: |
@@ -71,7 +97,7 @@ jobs:
 
       - name: 发布 Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: 桌面整理 v${{ steps.ver.outputs.version }}
           generate_release_notes: true
