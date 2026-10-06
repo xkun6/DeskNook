@@ -26,6 +26,7 @@ WorkerW                          <- 其他情形：DefView 挂在某个含它的
 
 `FindDesktop` 不发送任何消息。历史上曾向 Progman 发 `0x052C`（“生成 WorkerW”）以获得一个位于图标之后的窗口，提交 `45d4dcb` 起彻底移除，原因：
 
+- 直接原因（阶段 0 核查时发现）：Win10 发出 `0x052C` 后，壁纸改由 Progman 之上新生成的独立 WorkerW 绘制；owner 设为 Progman 的宿主窗口会贴在 Progman 之上，被这个壁纸 WorkerW 盖住。因此同一提交把 owner 改为 `DefViewParent`，并去掉该消息；
 - 代码注释记载的原因：不改变 Explorer 原生窗口结构（该消息会让 Explorer 新增 WorkerW），也不去打扰尚未就绪的新 Explorer（重挂轮询期间曾因此改为“仅轮询”）；
 - 设计上的推断：DeskNook 不需要“在图标之后”的窗口——系统图标层本身已被 `SW_HIDE`，宿主窗口只要在壁纸之上即可；少依赖一个非公开消息，对 Win11 24H2 的结构变化也更稳（后者未实测）。
 
