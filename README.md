@@ -67,6 +67,24 @@ msiexec /x DeskNook-1.0.0-x64.msi /qn                                   # 静默
 
 卸载 / 升级时会先执行 `DeskNook.exe --exit` 让运行中的实例退出（恢复系统桌面图标）；真正卸载时再执行 `--unregister`，删除右键菜单扩展注册和开机自启项，升级则保留。数据不随卸载删除：装在 Program Files 下时数据在 `%AppData%\DeskNook`，需要时手动删除。
 
+## 发布
+
+GitHub Actions（`.github/workflows/release.yml`）在 push main、PR、打 tag、手动触发时都会在 `windows-latest` 上测试并构建安装包与便携版，产物可在运行页的 Artifacts 下载（非 tag 构建的文件名带 `-ci.<运行号>` 后缀，文件版本沿用 csproj）。
+
+发布新版本：
+
+```powershell
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+推送 `v*` tag 后，工作流会以 tag 版本（`v1.0.1` → `1.0.1`）覆盖 csproj 的 `<Version>` 构建，校验 `DeskNook.exe` 文件版本与 tag 一致，并创建 GitHub Release（自动生成更新说明）。tag 带 `-`（如 `v1.2.0-beta.1`）时标记为预发布，文件版本取 `-` 前的 `1.2.0`。Release 里的文件：
+
+- `DeskNook-<版本>-x64.msi`：安装包（自带 .NET 运行时，per-machine，需要管理员）。
+- `DeskNook-<版本>-x64-portable.zip`：便携版（self-contained win-x64 发布目录，不含 pdb 与 data），解压即用；Shell 扩展注册、开机自启等需由程序内设置完成，不会写入安装信息。
+
+本地模拟：`tools/build-installer.ps1 -Version 1.0.1`（可加 `-NameSuffix -ci.1` 只改文件名）。
+
 ## 魔改入口：自定义右键菜单项
 
 所有自定义菜单项都集中在 `src/DeskNook/Desktop/MenuExtensions.cs` 的 `Items` 列表。加一个项只需在列表里追加：

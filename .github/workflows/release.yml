@@ -1,0 +1,81 @@
+name: build-release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write   # 创建 Release 需要
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: 解析版本号
+        id: ver
+        shell: pwsh
+        run: |
+          $isTag = '${{ startsWith(github.ref, 'refs/tags/v') }}' -eq 'true'
+          if ($isTag) {
+            $tag = '${{ github.ref_name }}'.Substring(1)            # v1.2.3 -> 1.2.3
+            $core = ($tag -split '-', 2)[0]                          # v1.2.0-beta.1 -> 1.2.0
+            if ($core -notmatch '^\d+\.\d+\.\d+$') { throw "tag 版本格式应为 vX.Y.Z[-后缀]，实际：$tag" }
+            "version=$core" >> $env:GITHUB_OUTPUT
+            "suffix=" >> $env:GITHUB_OUTPUT
+            "pass_version=$core" >> $env:GITHUB_OUTPUT
+          } else {
+            # 非 tag 构建：文件版本沿用 csproj，仅在文件名上加 -ci.<run_number>
+            $v = ([xml](Get-Content src/DeskNook/DeskNook.csproj -Raw)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+            "version=$v" >> $env:GITHUB_OUTPUT
+            "suffix=-ci.${{ github.run_number }}" >> $env:GITHUB_OUTPUT
+            "pass_version=" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: 测试
+        run: dotnet test DeskNook.sln -c Release --nologo
+
+      - name: 构建安装包与便携版
+        shell: pwsh
+        run: |
+          $a = @{}
+          if ('${{ steps.ver.outputs.pass_version }}') { $a.Version = '${{ steps.ver.outputs.pass_version }}' }
+          if ('${{ steps.ver.outputs.suffix }}') { $a.NameSuffix = '${{ steps.ver.outputs.suffix }}' }
+          ./tools/build-installer.ps1 @a
+
+      - name: 校验 exe 文件版本
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $fv = (Get-Item artifacts/publish/DeskNook.exe).VersionInfo.FileVersion
+          Write-Host "DeskNook.exe 文件版本：$fv，期望：${{ steps.ver.outputs.version }}"
+          if ($fv -notmatch '^${{ steps.ver.outputs.version }}(\.0)?$') { throw "文件版本 $fv 与 tag 版本不一致" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DeskNook-${{ steps.ver.outputs.version }}${{ steps.ver.outputs.suffix }}
+          path: |
+            artifacts/*.msi
+            artifacts/*-portable.zip
+          if-no-files-found: error
+
+      - name: 发布 Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: 桌面整理 v${{ steps.ver.outputs.version }}
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            artifacts/*.msi
+            artifacts/*-portable.zip
