@@ -2,7 +2,7 @@
 
   <!-- 安装包版本：由 tools/build-installer.ps1 从 DeskNook.exe 读取后传入；单独 dotnet build 时用默认值（仅影响文件名） -->
   <PropertyGroup>
-    <ProductVersion Condition="'$(ProductVersion)' == ''">1.0.1</ProductVersion>
+    <ProductVersion Condition="'$(ProductVersion)' == ''">1.0.2</ProductVersion>
     <!-- AppPublishDir：发布目录（自带运行时或依赖框架；可用 -p:AppPublishDir= 覆盖），规范化为带结尾反斜杠的绝对路径 -->
     <AppPublishDir Condition="'$(AppPublishDir)' == ''">$(MSBuildThisFileDirectory)..\artifacts\publish</AppPublishDir>
     <PublishDir>$([MSBuild]::NormalizeDirectory('$(AppPublishDir)'))</PublishDir>

@@ -158,4 +158,4 @@ HKCU 属于用户而不是 per-machine 的安装服务，所以开机自启和 S
 4. 等工作流跑完，检查 Release 页面：4 个文件（两个 MSI、两个 portable zip）都在、顶部有下载选择说明、预发布标记正确、`DeskNook.exe` 文件版本正确。
 5. 手测安装/升级/卸载（见 [testing.md](testing.md) 手测清单）：MSI 在 CI 里只验证“能构建”，没有自动安装测试。
 
-本地模拟 CI：`tools/build-installer.ps1 -Version 1.0.1 -NameSuffix -ci.1`。
+本地模拟 CI：`tools/build-installer.ps1 -Version 1.0.2 -NameSuffix -ci.1`。
