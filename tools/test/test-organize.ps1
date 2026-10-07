@@ -119,7 +119,7 @@ try {
     Invoke-Test 'C01 整理前：撤销整理置灰、一键整理可用' {
         $p = Find-BlankCell
         Click-Mouse $p.X $p.Y -Button Right; Wait-Ms 700
-        $o = Find-MenuItem '一键整理' -Exact; $x = Find-MenuItem '桌面整理' -Exact; Assert-True ($null -ne $x) '菜单里没有 桌面整理 子菜单'; Click-Mouse $x.X $x.Y -Delay 600; $u = Find-MenuItem '撤销整理'
+        $x = Find-MenuItem '桌面整理' -Exact; Assert-True ($null -ne $x) '菜单里没有 桌面整理 子菜单'; Click-Mouse $x.X $x.Y -Delay 600; $o = Find-MenuItem '一键整理' -Exact; $u = Find-MenuItem '撤销整理'
         Save-Screen -Name c-01-menu-initial | Out-Null
         Press-Key Escape; Press-Key Escape
         Assert-True ($o -and $u) '菜单里没有一键整理/撤销整理'
@@ -129,7 +129,7 @@ try {
     }
 
     Invoke-Test 'C02 一键整理：分类正确、新格子靠右不重叠、虚拟项不动' {
-        Right-ClickBlank @('一键整理'); Wait-Ms 1500; Wait-Saved
+        Right-ClickBlank @('桌面整理', '一键整理'); Wait-Ms 1500; Wait-Saved
         Move-Mouse ($Screen.Width - 5) ($Screen.Height - 5) 300
         Save-Screen -Name c-02-organized | Out-Null
         $expect = @{ 'xk-test-a.txt' = '文档'; 'xk-test-b.docx' = '文档'; 'xk-test-c.png' = '图片'; 'xk-test-d.mp4' = '视频';
@@ -176,7 +176,7 @@ try {
     }
 
     Invoke-Test 'C04 再整理 → 重启程序 → 撤销整理仍可用' {
-        Right-ClickBlank @('一键整理'); Wait-Ms 1500; Wait-Saved
+        Right-ClickBlank @('桌面整理', '一键整理'); Wait-Ms 1500; Wait-Saved
         Assert-True (Test-Path (Join-Path $AppDir 'organize-undo.json')) '没有写出 organize-undo.json'
         Stop-DeskNook | Out-Null; Wait-Ms 1500
         Start-DeskNook | Out-Null; Wait-Ms 2000
@@ -220,7 +220,7 @@ try {
         Assert-True (Test-Path (Join-Path $AppDir 'settings.json')) '没有写出 settings.json'
         $json = Get-Content (Join-Path $AppDir 'settings.json') -Raw -Encoding UTF8
         Assert-True ($json -notmatch '"txt"') 'settings.json 里仍有 txt'
-        Right-ClickBlank @('一键整理'); Wait-Ms 1500; Wait-Saved
+        Right-ClickBlank @('桌面整理', '一键整理'); Wait-Ms 1500; Wait-Saved
         Move-Mouse ($Screen.Width - 5) ($Screen.Height - 5) 300
         Save-Screen -Name c-05-organized-custom | Out-Null
         $b = Get-BoxOfKey 'xk-test-a.txt'

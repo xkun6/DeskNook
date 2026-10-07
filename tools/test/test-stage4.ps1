@@ -106,7 +106,7 @@ try {
         $r = Capture-Menu 'h-03-hidden-menu' $bp.X $bp.Y
         Assert-True ($r.Texts.Count -gt 5) "菜单项太少：$($r.Texts -join '|')"
         Assert-True (Has-Text $r.Texts '刷新') '缺少 刷新'
-        Assert-True (Has-Text $r.Texts '一键整理') '缺少 一键整理'
+        Assert-True (Has-Text $r.Texts '桌面整理') '缺少 桌面整理'
         "项数=$($r.Texts.Count)"
     }
     Invoke-Test '重启程序后保持隐藏' {
@@ -304,7 +304,7 @@ try {
         Invoke-Test '“打开所在位置”只在格子内的项上出现' {
             # 一键整理后图标都在格子里
             Click-Mouse $bp.X $bp.Y -Button Right -Delay 1200
-            Click-MenuPath @('一键整理')
+            Click-MenuPath @('桌面整理', '一键整理')
             Wait-Ms 1200; Wait-Saved
             $boxes = Get-Boxes
             $b = $boxes | Where-Object { @($_.ItemKeys | Where-Object { $_ -like '*xk-test-a.txt' }).Count -gt 0 } | Select-Object -First 1
