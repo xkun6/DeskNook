@@ -24,7 +24,7 @@
 `DesktopItemSource.Enumerate()`（桌面）与 `EnumerateFolder(path, container)`（映射目录）共用 `EnumerateInto`：
 
 - 桌面：对桌面根 `IShellFolder`（`ShellApi.Desktop`）`EnumObjects(SHCONTF_FOLDERS|NONFOLDERS)`，这样自动合并**用户桌面 + 公共桌面 + 虚拟项**。是否包含隐藏/超级隐藏项由注册表 `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` 的 `Hidden`/`ShowSuperHidden`（值为 1）决定，与 Explorer 一致。
-- 过滤：位于用户桌面目录或公共桌面目录的文件系统项直接保留；其余项（用户文件夹、OneDrive、网盘等命名空间项）只保留**系统桌面视图里本来就显示的**——`SystemDesktopView.IsShown`（`IFolderView2.GetItemPosition` 成功即显示）。系统视图取不到（`sysView==null`）时不过滤。
+- 过滤：位于用户桌面目录或公共桌面目录的文件系统项直接保留；其余项（用户文件夹、OneDrive、网盘等命名空间项）只保留**系统桌面视图里本来就显示的**——`SystemDesktopView.IsShown`（`IFolderView2.GetItemPosition` 成功即显示）。系统视图取不到（`sysView==null`）时不过滤。只有构造时的首次枚举同步询问，之后只读缓存并由后台线程复核，见“耗时与虚拟项缓存”。
 - 映射目录：`ShellApi.BindFolder(path, out abs)` 绑定该目录，枚举同样走 `EnumerateInto`，不做系统视图过滤。目录绑不上（被删/不可达）返回空列表并记日志。
 - 半透明：`IsHidden`/`IsGhosted` 的项以 50% 不透明度显示（`IconItemControl.UpdateVisual`），与系统桌面一致；“剪切”状态也是 50%。
 
@@ -38,9 +38,19 @@
 - 其余：读取两个 PIDL 的解析名；`RENAMEITEM/RENAMEFOLDER` 记录**改名提示** `_renameHints[旧key]=新key`；`UPDATEITEM/ATTRIBUTES` 让该 key 的图标失效；然后 `Schedule()` 重置 300ms 去抖计时器。
 - 去抖到期 → `Refresh(useShownCache: true)`：重新 `Load()` → `ItemDiff.Compute(旧集合, 新集合, 改名提示)` → 触发 `Changed(diff)` 与逐项 `IconInvalidated`。
 
-**耗时与虚拟项缓存**：桌面 255 项空闲时 `Enumerate()` 约 15ms（首次约 180ms），整条刷新应在“去抖 300ms + 几十 ms”内完成。枚举时对**不在用户/公共桌面目录下的项（回收站、此电脑等虚拟项）**要问系统桌面视图是否显示（`DesktopItemSource.Enumerate` → `SystemDesktopView.Acquire/IsShown`），这是**跨进程 COM 调用**进 Explorer 桌面线程；而“新建 ▸ 文件/文件夹”若交给 Explorer DefView 执行（日志 `代理已执行 … DefView=True`），它忙于新项与进入自身重命名时，该调用会被阻塞数秒（实测新建后 1.4~6 秒才刷新，删除/DefView=False 的操作只有约 0.4 秒）。所以桌面/格子空白处的新建文件夹与 ShellNew 文件已改由 DeskNook 自己创建（`DesktopController.CreateNewItem` → `ShellNewItems.Create`，IFileOperation.NewItem 带撤销记录，日志 `新建（DeskNook 执行）：… 耗时 X ms`），随后立即 `DesktopItemSource.Refresh(useShownCache:true)` 同步 diff，不再等 Explorer；只有快捷方式、库等 Handler/Command 类新建仍走 Explorer，仍受上述阻塞影响。因此：结果按解析名缓存在 `DesktopItemSource._shownCache`，去抖路径命中缓存则不再询问 Explorer；显式 `Refresh()`（菜单“刷新”、`CommitRename`）清缓存重新询问。刷新完成日志带“刷新耗时 X ms，枚举 Y ms”，单次询问超过 200ms 另记一行“询问系统桌面视图耗时”，用于确认是否仍被阻塞。另外 `DesktopSurface.cs:OnRenameRequested` 打两行日志：立即打“原位重命名框已显示：{key}（排队 X ms，调用前前台=0x句柄(进程Id N)）”（排队起点为 `DesktopController.cs:RenamePostedAt`，非新建路径显示“非新建路径”），拿到前台并聚焦后打“原位重命名框获得焦点：{key} 键盘焦点=… （距显示 X ms）”；`DesktopSurface.BringToForegroundThen` 的后台 `SetForegroundWindow` 超 100ms 另记一行“SetForegroundWindow（后台线程）耗时”。`DesktopSurface.cs:LoadIcon` 的图标加载超过 500ms 单独记日志，用于定位“新建后迟迟不显示”。
+**耗时与虚拟项缓存**：桌面 255 项空闲时 `Enumerate()` 约 15ms（首次约 180ms），整条刷新应在“去抖 300ms + 几十 ms”内完成。枚举时对**不在用户/公共桌面目录下的项（回收站、此电脑等虚拟项）**要问系统桌面视图是否显示（`DesktopItemSource.Enumerate` → `SystemDesktopView.Acquire/IsShown`），这是**跨进程 COM 调用**进 Explorer 桌面线程；而“新建 ▸ 文件/文件夹”若交给 Explorer DefView 执行（日志 `代理已执行 … DefView=True`），它忙于新项与进入自身重命名时，该调用会被阻塞数秒（实测新建后 1.4~6 秒才刷新，删除/DefView=False 的操作只有约 0.4 秒）。所以桌面/格子空白处的新建文件夹与 ShellNew 文件已改由 DeskNook 自己创建（`DesktopController.CreateNewItem` → `ShellNewItems.Create`，IFileOperation.NewItem 带撤销记录，日志 `新建（DeskNook 执行）：… 耗时 X ms`），随后立即 `DesktopItemSource.Refresh(useShownCache:true)` 同步 diff，不再等 Explorer；只有快捷方式、库等 Handler/Command 类新建仍走 Explorer（Explorer 忙时新项出现会晚，但 DeskNook UI 线程不再被阻塞）。**虚拟项显示状态改为后台复核，UI 线程永不等待 Explorer**：撤销/还原多个文件时，Shell 通知里几乎必带 `::{679F85CB-…}`（快速访问）的 UPDATEDIR/UPDATEIMAGE，`NeedsShownCacheReset` 命中；旧实现会清空缓存并在 UI 线程同步询问 Explorer，而此时 Explorer 桌面线程正忙，实测一次询问阻塞 8655 ms（日志 `询问系统桌面视图耗时 8655 ms：::{20D04FE0-…}`），整个 DeskNook 冻结，图标回调也被堵。现在的模型（`DesktopItemSource.Refresh/Enumerate/RequestRecheck/RecheckWorker/OnRecheckDone`）：
 
-**缓存失效规则**：`DesktopItemSource.NeedsShownCacheReset` 判断每条通知，满足任一则下次去抖刷新先清 `_shownCache`：事件含 `SHCNE_ASSOCCHANGED`（该事件会额外触发一次去抖刷新）；任一 PIDL 解析名以 `::` 开头（虚拟/CLSID 项变化，如“桌面图标设置”勾选此电脑/回收站）；`UPDATEDIR/UPDATEITEM` 且两个 PIDL 都无解析名（作用于桌面根）。新建文件那批通知（`CREATE/MKDIR [桌面目录下路径]`、`UPDATEITEM [桌面目录]`、`0x4000000` 空路径）不触发，单测 `ShownCacheResetTests`。隐藏窗口未处理 `WM_SETTINGCHANGE`。
+- 构造时的首次枚举（`Load(candidates, askMissing:true)`）仍同步询问并写入 `_shownCache`（启动时需要真值，日志 `询问系统桌面视图耗时` 只可能出现在这里）。
+- 之后所有刷新（去抖路径与显式 `Refresh()`）都**不清空缓存、不询问 Explorer**，`Enumerate(shownCache, candidates, askMissing:false)` 只读缓存；缓存里没有的非桌面目录项（全新的命名空间项）先按“不显示”处理。`Enumerate` 同时把本次所有需要询问的项收进 `candidates`（`ShownCandidate`：解析名 + PIDL 字节）。
+- 显式 `Refresh()`（菜单“刷新”、`CommitRename`、F5）或本批通知置位了 `_resetShownCache` 时调用 `RequestRecheck`：把候选列表交给长驻后台 STA 线程 `ShownRecheckWorker`（`IsBackground`，`BlockingCollection` 队列，`Dispose` 时 `CompleteAdding` 结束），线程里 `SystemDesktopView.Acquire()` + 逐项 `IsShown`，完成后释放 COM 对象，再 `Dispatcher.BeginInvoke` 回 UI 线程 `OnRecheckDone`。`CreateNewItem` 的 `Refresh(useShownCache:true)` 不带重置标志则不复核。
+- `OnRecheckDone` 用纯函数 `DesktopItemSource.MergeShown(cache, results)` 逐项比较并更新缓存（新增键或值翻转返回 true），有变化才 `Refresh(useShownCache:true)` 再刷一次，无变化什么都不做（单测 `ShownMergeTests`）。复核进行中再次请求只置 `_recheckAgain`，完成后再跑一轮，不并发多轮；`Acquire` 取不到系统视图时本轮结果为空，缓存保持原样。后台线程异常全部捕获记日志。
+- 日志：复核耗时超过 200 ms 记“后台复核系统桌面视图耗时 X ms（N 项，变化 M 项）”；刷新完成日志仍带“刷新耗时 X ms，枚举 Y ms”（现在应是毫秒级）。映射目录（`EnumerateFolder`）不涉及系统视图，不变。
+
+另外 `DesktopSurface.cs:OnRenameRequested` 打两行日志：立即打“原位重命名框已显示：{key}（排队 X ms，调用前前台=0x句柄(进程Id N)）”（排队起点为 `DesktopController.cs:RenamePostedAt`，非新建路径显示“非新建路径”），拿到前台并聚焦后打“原位重命名框获得焦点：{key} 键盘焦点=… （距显示 X ms）”；`DesktopSurface.BringToForegroundThen` 的后台 `SetForegroundWindow` 超 100ms 另记一行“SetForegroundWindow（后台线程）耗时”。`DesktopSurface.cs:LoadIcon` 的图标加载超过 500ms 单独记日志，用于定位“新建后迟迟不显示”。
+
+**重命名请求优先级**：`DesktopController.cs` 两处新建后投递 `RenameRequested` 用 `DispatcherPriority.Input`（原为 `Background`，启动后大量图标回调以 Normal 优先级压住它，实测排队 2047 ms；`Input` 仍在布局之后执行，能读到 `LabelBounds`）；图标回调相应降为 `Background`（见“图标缓存”）。
+
+**缓存失效规则**：`DesktopItemSource.NeedsShownCacheReset` 判断每条通知，满足任一则置位 `_resetShownCache`，下次刷新触发后台复核（不再清空 `_shownCache`，UI 线程不等待 Explorer，见上）：事件含 `SHCNE_ASSOCCHANGED`（该事件会额外触发一次去抖刷新）；任一 PIDL 解析名以 `::` 开头（虚拟/CLSID 项变化，如“桌面图标设置”勾选此电脑/回收站）；`UPDATEDIR/UPDATEITEM` 且两个 PIDL 都无解析名（作用于桌面根）。新建文件那批通知（`CREATE/MKDIR [桌面目录下路径]`、`UPDATEITEM [桌面目录]`、`0x4000000` 空路径）不触发，单测 `ShownCacheResetTests`。隐藏窗口未处理 `WM_SETTINGCHANGE`。
 
 `ItemDiff.Compute` 的规则：key 比较忽略大小写；先按改名提示配对（旧 key 在旧集合且不在新集合、新 key 在新集合且不在旧集合才成立），配对的进 `Renamed`，**不**算新增/删除；其余新增、删除、指纹变化（`Updated`）。没有改名提示（例如外部程序批量改名）则按“删除 + 新增”处理，位置会丢（新增项走空位分配）。
 
@@ -77,6 +87,7 @@
 - **界面更新**：`DesktopSurface` 在构造里订阅 `_c.Icons.Upgraded`、`Detach` 里退订（与 `IconInvalidated` 同处）；`OnIconUpgraded` 在 `_controls` 里该 key 的控件 `IconPx == px` 时 `ctl.SetIcon(新图)`。格子内的图标同样经 `DesktopSurface.BindItem → LoadIcon`，无需另改。
 - **日志阈值**：工作线程里单个阶段 1 超过 100 ms 记 `图标阶段1耗时 N ms：<key>`，阶段 2 超过 500 ms 记 `图标阶段2耗时 N ms：<key>`；`DesktopSurface.LoadIcon` 里原有的 `图标加载耗时 N ms`（>500 ms，含排队等待）保留。
 - 失效：`Invalidate(null)` 清空全部（含 `_indexCache`）并 `_generation++`（后台正在加载的过期结果被丢弃）；`Invalidate(key)` 清该 key 的所有尺寸并 `_generation++`。失败返回 null 时 `IconItemControl.NeedsIcon=true`，下次重建重试。
+- 回调优先级：工作线程回 UI 的 `BeginInvoke`（阶段 1 结果、阶段 2 `Upgraded`）一律用 `DispatcherPriority.Background`，不压过输入与重命名请求（`DesktopController` 用 `Input` 投递）。
 - 线程模型：`_cache`/`_pending` 只在 UI 线程访问（后台线程只产出冻结的 `BitmapSource` 并 `BeginInvoke` 回来）；工作线程里的异常一律捕获记日志，不会越出线程。
 
 ## 首次导入系统图标位置
@@ -127,7 +138,7 @@
 | F2 | 重命名选中的第一项 |
 | Delete / Shift+Delete | `DeleteSelected`：对每个来源分组调用 `ShellContextMenu.InvokeVerb("delete")`，Shift 时带 `CMIC_MASK_SHIFT_DOWN` 即永久删除（走 Shell 的确认框） |
 | Ctrl+A / C / X / V | 全选 / 复制 / 剪切 / 粘贴（`copy`/`cut`/`paste` 动词，作用在 Shell 数据对象上） |
-| Ctrl+Z | `Undo`：向隐藏着的系统 DefView 发 `WM_COMMAND 0x701B`（`FCIDM_SHVIEW_UNDO`），由 Shell 自己的撤销栈执行；仅当 `UndoLabel != null` |
+| Ctrl+Z | `Undo`：总是转发，不看 `UndoLabel`：向隐藏着的系统 DefView 发 `WM_COMMAND 0x701B`（`FCIDM_SHVIEW_UNDO`），由 Shell 自己的撤销栈执行（栈空时 Shell 自己无操作，与 Explorer 一致；Explorer 自己执行的操作如拖进回收站也能撤销）。调用后 `UndoLabel=null`；右键菜单里的“撤消 xxx”项仍只在 `UndoLabel != null` 时出现 |
 | Enter / Alt+Enter | 打开 / 属性（`properties` 动词） |
 | F5 | `Refresh`：清图标缓存、桌面与全部映射目录重新枚举 |
 | Esc | 清除选择 |

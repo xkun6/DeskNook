@@ -308,7 +308,7 @@ internal sealed class DesktopController : IDisposable
         if (renameKey != null)
         {
             RenamePostedAt = Stopwatch.GetTimestamp();
-            _dispatcher.BeginInvoke(DispatcherPriority.Background, () => RenameRequested?.Invoke(renameKey));
+            _dispatcher.BeginInvoke(DispatcherPriority.Input, () => RenameRequested?.Invoke(renameKey));
         }
     }
 
@@ -436,7 +436,7 @@ internal sealed class DesktopController : IDisposable
         if (renameKey != null)
         {
             RenamePostedAt = Stopwatch.GetTimestamp();
-            _dispatcher.BeginInvoke(DispatcherPriority.Background, () => RenameRequested?.Invoke(renameKey));
+            _dispatcher.BeginInvoke(DispatcherPriority.Input, () => RenameRequested?.Invoke(renameKey));
         }
     }
 
@@ -621,12 +621,12 @@ internal sealed class DesktopController : IDisposable
         _pendingOpUntil = DateTime.UtcNow + TimeSpan.FromSeconds(20);
     }
 
-    /// <summary>撤销：把 Explorer 的 FCIDM_SHVIEW_UNDO(0x701B) 发给系统里隐藏着的 DefView，由 Shell 的撤销栈执行。</summary>
+    /// <summary>撤销：把 Explorer 的 FCIDM_SHVIEW_UNDO(0x701B) 发给系统里隐藏着的 DefView，由 Shell 的撤销栈执行（栈空时 Shell 自己无操作）。不依赖 UndoLabel。</summary>
     public void Undo()
     {
         var defView = DesktopShell.FindDesktop().DefView;
         if (defView == IntPtr.Zero) return;
-        Log.Info($"撤销：{UndoLabel}");
+        Log.Info($"撤销：{UndoLabel ?? "（交给 Shell 撤销栈）"}");
         Win32.PostMessage(defView, 0x0111 /* WM_COMMAND */, (IntPtr)0x701B, IntPtr.Zero);
         UndoLabel = null;
     }

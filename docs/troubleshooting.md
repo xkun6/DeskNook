@@ -84,6 +84,13 @@ DeskNook 通过 `ShowWindow(SW_HIDE)` 隐藏系统 `SysListView32`，而不是�
   - 根因：`DesktopSurface.OnRenameRequested` 里同步 `SetForegroundWindow(_hwnd)` 在 UI 线程上阻塞 1.4~6 秒。调用前前台是 Explorer 里的菜单代理窗口 `DeskNook.MenuProxy`，其所在的 Explorer 桌面线程正在执行 DefView 的新建并进入自己的重命名，要等它处理完失活 `SetForegroundWindow` 才返回；期间 UI 线程冻结，图标回调也被堵。
   - 修复位置：`DesktopSurface.BringToForegroundThen`（后台线程 `SetForegroundWindow`，拿到前台后才聚焦重命名框并挂失焦提交）；`BringToForeground` 同步版只留给用户点击路径。
   - 排查日志：`原位重命名框已显示：…（排队 X ms，调用前前台=…）` 与 `原位重命名框获得焦点：…（距显示 X ms）` 两行的时间差；`SetForegroundWindow（后台线程）耗时 N ms` 出现表示抢前台被阻塞（此时 UI 应仍流畅）；若又见 `SetForegroundWindow 耗时`（无“后台线程”）说明有新路径在 UI 线程同步抢前台。
+- 撤销/还原文件后桌面整理冻结数秒：
+  - 现象：用户撤销（还原多个文件）后 DeskNook 整个界面冻结 8 秒以上，图标回调也出不来；日志里有 `询问系统桌面视图耗时 8655 ms：::{…}`。
+  - 根因：撤销产生的通知几乎必带快速访问 `::{679F85CB-…}` 的 UPDATEDIR/UPDATEIMAGE，命中 `NeedsShownCacheReset`；旧实现据此清空 `_shownCache`，在 **UI 线程**同步跨进程问 Explorer（`SystemDesktopView.IsShown`），而 Explorer 桌面线程正忙于撤销，一次询问就阻塞数秒。
+  - 修复位置：`DesktopItemSource` 改为后台复核（`RequestRecheck/RecheckWorker/OnRecheckDone/MergeShown`），首次枚举之外 UI 线程不再询问 Explorer。
+  - 排查日志：不应再出现 UI 线程的 `询问系统桌面视图耗时`（仅启动首次枚举可能出现）；`后台复核系统桌面视图耗时 X ms（N 项，变化 M 项）` 出现说明 Explorer 忙，但 UI 应仍流畅；若仍卡顿，看是否有新路径在 UI 线程调用 `SystemDesktopView`。
+- Ctrl+Z 偶尔无反应：旧版只在 `UndoLabel != null` 时才转发；现 `DesktopSurface.HandleKey` 总是调 `DesktopController.Undo`，日志 `撤销：（交给 Shell 撤销栈）` 表示无标签也已转发，栈空由 Shell 自己忽略。
+- 新建后进入重命名框延迟：`DesktopController` 投递 `RenameRequested` 用 `DispatcherPriority.Input`，`ShellIconCache` 回调用 `Background`；旧版 `Background` 被启动后大量图标回调饿住，日志“排队 2047 ms”。
 
 **菜单**
 

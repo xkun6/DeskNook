@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -9,6 +10,9 @@ using DeskNook.Native;
 using DeskNook.Services;
 
 namespace DeskNook.Desktop;
+
+/// <summary>需要问系统桌面视图“是否显示”的虚拟项候选：解析名 + PIDL 字节拷贝（可安全交给后台线程）。</summary>
+internal readonly record struct ShownCandidate(string Key, byte[] Pidl);
 
 /// <summary>
 /// 桌面项来源：枚举桌面根文件夹（用户桌面 + 公共桌面 + 虚拟项），
@@ -29,10 +33,20 @@ internal sealed class DesktopItemSource : IDisposable
     private readonly string? _mappedPath;
     private readonly string _container;
     private readonly string _prefix;
-    /// <summary>非桌面目录项（虚拟项）“系统桌面是否显示”的结果缓存：key = 解析名。询问系统视图是跨进程 COM 调用，Explorer 桌面线程忙时会阻塞数秒。</summary>
+    /// <summary>非桌面目录项（虚拟项）“系统桌面是否显示”的结果缓存：key = 解析名。询问系统视图是跨进程 COM 调用，Explorer 桌面线程忙时会阻塞数秒（实测 8.6 秒），所以只有构造时的首次枚举同步询问，之后一律只读缓存，由后台线程复核。</summary>
     private readonly Dictionary<string, bool> _shownCache = new(StringComparer.OrdinalIgnoreCase);
-    /// <summary>本批通知里出现了可能改变虚拟项显示状态的事件：下次去抖刷新先清 _shownCache。</summary>
+    /// <summary>本批通知里出现了可能改变虚拟项显示状态的事件：下次刷新要后台复核（不清缓存）。</summary>
     private bool _resetShownCache;
+    private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
+    /// <summary>最近一次枚举得到的候选项（UI 线程读写）。</summary>
+    private List<ShownCandidate> _candidates = new();
+    private BlockingCollection<List<ShownCandidate>>? _recheckQueue;
+    private Thread? _recheckThread;
+    /// <summary>后台复核进行中（UI 线程读写）。</summary>
+    private bool _recheckRunning;
+    /// <summary>复核进行中又有新请求：完成后再跑一轮。</summary>
+    private bool _recheckAgain;
+    private bool _disposed;
     private List<DesktopItem> _items = new();
 
     public IReadOnlyList<DesktopItem> Items => _items;
@@ -67,23 +81,29 @@ internal sealed class DesktopItemSource : IDisposable
             catch (Exception ex) { Log.Error("桌面项刷新失败", ex); }
         };
 
-        _items = Load();
+        var firstCandidates = _mappedPath == null ? new List<ShownCandidate>() : null;
+        _items = Load(firstCandidates, askMissing: true);
+        if (firstCandidates != null) _candidates = firstCandidates;
         Log.Info($"{(_mappedPath == null ? "桌面项" : "映射目录 " + _mappedPath)} 枚举完成：{_items.Count} 项");
         Register();
     }
 
     /// <summary>
     /// 立即重新枚举并与旧集合 diff，有变化则触发 Changed。
-    /// useShownCache=true（通知去抖路径）时复用虚拟项的“系统桌面是否显示”缓存，避免跨进程阻塞；否则清空缓存重新询问。
+    /// 枚举只读虚拟项的“系统桌面是否显示”缓存，UI 线程永不等待 Explorer；缓存没有的虚拟项先按“不显示”处理。
+    /// useShownCache=false（显式刷新）或本批通知置位了 _resetShownCache 时，另起后台线程复核，有变化再刷一次。
     /// </summary>
     public void Refresh(bool useShownCache = false)
     {
         var sw = Stopwatch.StartNew();
-        if (!useShownCache || _resetShownCache) _shownCache.Clear();
+        var recheck = !useShownCache || _resetShownCache;
         _resetShownCache = false;
         var hints = _renameHints.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
         _renameHints.Clear();
-        var fresh = Load();
+        var candidates = _mappedPath == null ? new List<ShownCandidate>() : null;
+        var fresh = Load(candidates, askMissing: false);
+        if (candidates != null) _candidates = candidates;
+        if (recheck && _mappedPath == null) RequestRecheck();
         var loadMs = sw.ElapsedMilliseconds;
         var diff = ItemDiff.Compute(_items, fresh, hints);
         _items = fresh;
@@ -212,10 +232,112 @@ internal sealed class DesktopItemSource : IDisposable
     private static string? NameOf(IntPtr pidl) =>
         ShellApi.GetNameFromPidl(pidl, ShellApi.SIGDN_DESKTOPABSOLUTEPARSING) ?? ShellApi.GetNameFromPidl(pidl, ShellApi.SIGDN_FILESYSPATH);
 
-    private List<DesktopItem> Load() => _mappedPath == null ? Enumerate(_shownCache) : EnumerateFolder(_mappedPath, _container);
+    private List<DesktopItem> Load(List<ShownCandidate>? candidates, bool askMissing) =>
+        _mappedPath == null ? Enumerate(_shownCache, candidates, askMissing) : EnumerateFolder(_mappedPath, _container);
 
-    /// <summary>枚举桌面根的所有项。shownCache 记住虚拟项是否被系统桌面显示（命中则不再跨进程询问 Explorer）。</summary>
-    public static List<DesktopItem> Enumerate(Dictionary<string, bool>? shownCache = null)
+    /// <summary>
+    /// 把复核结果并入缓存：新增键或值翻转则更新并返回 true，全部一致返回 false。
+    /// </summary>
+    internal static bool MergeShown(Dictionary<string, bool> cache, IReadOnlyDictionary<string, bool> results)
+    {
+        var changed = false;
+        foreach (var kv in results)
+        {
+            if (cache.TryGetValue(kv.Key, out var old) && old == kv.Value) continue;
+            cache[kv.Key] = kv.Value;
+            changed = true;
+        }
+        return changed;
+    }
+
+    /// <summary>请求后台复核当前候选项（UI 线程）。进行中则合并：完成后若期间又有请求再跑一轮。</summary>
+    private void RequestRecheck()
+    {
+        if (_disposed) return;
+        if (_recheckRunning) { _recheckAgain = true; return; }
+        try
+        {
+            if (_recheckQueue == null)
+            {
+                _recheckQueue = new BlockingCollection<List<ShownCandidate>>();
+                _recheckThread = new Thread(RecheckWorker) { IsBackground = true, Name = "ShownRecheckWorker" };
+                _recheckThread.SetApartmentState(ApartmentState.STA);
+                _recheckThread.Start();
+            }
+            _recheckRunning = true;
+            _recheckQueue.Add(_candidates);
+        }
+        catch (Exception ex)
+        {
+            _recheckRunning = false;
+            Log.Error("启动虚拟项显示状态后台复核失败", ex);
+        }
+    }
+
+    /// <summary>专用 STA 线程：逐批问系统桌面视图，结果回投 UI 线程。异常全部捕获。</summary>
+    private void RecheckWorker()
+    {
+        var queue = _recheckQueue!;
+        try
+        {
+            foreach (var batch in queue.GetConsumingEnumerable())
+            {
+                var sw = Stopwatch.StartNew();
+                var results = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                try
+                {
+                    var fv = SystemDesktopView.Acquire();
+                    if (fv != null)
+                    {
+                        try
+                        {
+                            foreach (var c in batch)
+                            {
+                                try { results[c.Key] = SystemDesktopView.IsShown(fv, c.Pidl); }
+                                catch (Exception ex) { Log.Error($"后台复核询问失败 {c.Key}", ex); }
+                            }
+                        }
+                        finally
+                        {
+                            try { Marshal.ReleaseComObject(fv); } catch { /* 已释放 */ }
+                        }
+                    }
+                }
+                catch (Exception ex) { Log.Error("后台复核系统桌面视图异常", ex); }
+                var ms = sw.ElapsedMilliseconds;
+                var count = batch.Count;
+                try { _dispatcher.BeginInvoke(() => OnRecheckDone(results, ms, count)); }
+                catch (Exception ex) { Log.Error("后台复核结果回投 UI 失败", ex); }
+            }
+        }
+        catch (Exception ex) { Log.Error("虚拟项复核线程异常退出", ex); }
+    }
+
+    private void OnRecheckDone(Dictionary<string, bool> results, long ms, int count)
+    {
+        _recheckRunning = false;
+        if (_disposed) return;
+        try
+        {
+            var diffCount = results.Count(kv => !_shownCache.TryGetValue(kv.Key, out var o) || o != kv.Value);
+            var changed = MergeShown(_shownCache, results);
+            if (ms > 200) Log.Info($"后台复核系统桌面视图耗时 {ms} ms（{count} 项，变化 {diffCount} 项）");
+            if (_recheckAgain)
+            {
+                _recheckAgain = false;
+                RequestRecheck();
+            }
+            if (changed) Refresh(useShownCache: true);
+        }
+        catch (Exception ex) { Log.Error("应用后台复核结果失败", ex); }
+    }
+
+    /// <summary>
+    /// 枚举桌面根的所有项。shownCache 记住虚拟项是否被系统桌面显示：命中不再询问 Explorer；
+    /// 未命中时 askMissing=true 同步询问（仅首次枚举），false 按“不显示”处理。
+    /// candidates 非空时收集本次所有需要询问的项（供后台复核）。
+    /// </summary>
+    public static List<DesktopItem> Enumerate(Dictionary<string, bool>? shownCache = null, List<ShownCandidate>? candidates = null, bool askMissing = true)
     {
         var list = new List<DesktopItem>();
         var desktop = ShellApi.Desktop;
@@ -232,12 +354,15 @@ internal sealed class DesktopItemSource : IDisposable
                 (string.Equals(Path.GetDirectoryName(path), userDesk, StringComparison.OrdinalIgnoreCase) ||
                  string.Equals(Path.GetDirectoryName(path), pubDesk, StringComparison.OrdinalIgnoreCase));
             if (onDesktopDir) return true;
+            var pidlBytes = ShellApi.PidlToBytes(child);
+            candidates?.Add(new ShownCandidate(rawKey, pidlBytes));
             if (shownCache != null && shownCache.TryGetValue(rawKey, out var cached)) return cached;
+            if (!askMissing) return false;
             var sw = Stopwatch.StartNew();
             if (!sysViewTried) { sysView = SystemDesktopView.Acquire(); sysViewTried = true; }
-            var shown = sysView == null || SystemDesktopView.IsShown(sysView, ShellApi.PidlToBytes(child));
+            var shown = sysView == null || SystemDesktopView.IsShown(sysView, pidlBytes);
             if (sw.ElapsedMilliseconds > 200) Log.Info($"询问系统桌面视图耗时 {sw.ElapsedMilliseconds} ms：{rawKey}");
-            if (sysView != null && shownCache != null) shownCache[rawKey] = shown;
+            if (shownCache != null) shownCache[rawKey] = shown;
             return shown;
         });
         return list;
@@ -357,6 +482,8 @@ internal sealed class DesktopItemSource : IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
+        try { _recheckQueue?.CompleteAdding(); } catch { /* 已释放 */ }
         _debounce.Stop();
         foreach (var id in _notifyIds) if (id != 0) Win32.SHChangeNotifyDeregister(id);
         _notifyIds.Clear();

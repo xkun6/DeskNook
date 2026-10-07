@@ -116,7 +116,7 @@ internal sealed class ShellIconCache : IDisposable
         var ms = (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         if (ms > Stage1SlowMs) Log.Info($"图标阶段1耗时 {ms} ms：{req.Key}");
 
-        _dispatcher.BeginInvoke(() =>
+        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
             var k = (req.Key, req.Px);
             if (bmp != null && req.Gen == _generation) _cache[k] = bmp;
@@ -141,7 +141,7 @@ internal sealed class ShellIconCache : IDisposable
         if (ms > Stage2SlowMs) Log.Info($"图标阶段2耗时 {ms} ms：{req.Key}");
         if (bmp == null) return;
 
-        _dispatcher.BeginInvoke(() =>
+        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
             if (req.Gen != _generation) return; // 期间发生过失效，丢弃
             _cache[(req.Key, req.Px)] = bmp;
