@@ -108,6 +108,13 @@ internal sealed class DesktopDropTarget : IDropTarget, IDisposable
                         _c.SetPendingDrop(_surface.MonitorName, col, row);
                     }
                 }
+                if (internalDrag && _forwardTag != null && _forwardTag.StartsWith("item:", StringComparison.Ordinal) &&
+                    _forwardTag.Contains("645FF040-5081-101B-9F08-00AA002F954E", StringComparison.OrdinalIgnoreCase))
+                {
+                    // 拖到回收站：Shift 是永久删除；否则记录这次删除，Ctrl+Z 时直接从回收站移回
+                    if ((grfKeyState & 0x4) != 0) _c.ClearDeleteRecord();
+                    else _c.RecordDelete(_c.DragKeys!.Select(k => _c.ItemOf(k)).Where(i => i != null).Select(i => i!).ToList());
+                }
                 var hr = _forward.Drop(pDataObj, grfKeyState, pt, ref pdwEffect);
                 Log.Info($"拖放转发给 {_forwardTag}：hr=0x{hr:X} 效果={pdwEffect}");
             }

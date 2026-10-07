@@ -89,6 +89,10 @@ DeskNook 通过 `ShowWindow(SW_HIDE)` 隐藏系统 `SysListView32`，而不是�
   - 根因：撤销产生的通知几乎必带快速访问 `::{679F85CB-…}` 的 UPDATEDIR/UPDATEIMAGE，命中 `NeedsShownCacheReset`；旧实现据此清空 `_shownCache`，在 **UI 线程**同步跨进程问 Explorer（`SystemDesktopView.IsShown`），而 Explorer 桌面线程正忙于撤销，一次询问就阻塞数秒。
   - 修复位置：`DesktopItemSource` 改为后台复核（`RequestRecheck/RecheckWorker/OnRecheckDone/MergeShown`），首次枚举之外 UI 线程不再询问 Explorer。
   - 排查日志：不应再出现 UI 线程的 `询问系统桌面视图耗时`（仅启动首次枚举可能出现）；`后台复核系统桌面视图耗时 X ms（N 项，变化 M 项）` 出现说明 Explorer 忙，但 UI 应仍流畅；若仍卡顿，看是否有新路径在 UI 线程调用 `SystemDesktopView`。
+- 在资源管理器里撤销/还原文件时 Explorer 卡数秒（Explorer 未响应）：
+  - 这是 Windows 自身行为，与 DeskNook 无关：Shell 撤销与回收站“还原”会让 Explorer 桌面线程为每个文件在系统 ListView 里找空位（`comctl32!CLVSlotsManager::FindFreeSlot`），图标越多每项越慢（约 260 图标时每项约 2 秒）。
+  - 诊断：用户态挂起（或采样）Explorer 的桌面线程，栈顶落在 `CLVSlotsManager::FindFreeSlot` 即是。
+  - DeskNook 的规避：桌面整理里发起的删除，Ctrl+Z 由 `RecycleBinUndo.Restore` 直接从回收站移回，不走 Shell 还原，见 [desktop-items.md](desktop-items.md)“删除撤销”；在资源管理器里发起的撤销/还原无法规避。
 - Ctrl+Z 偶尔无反应：旧版只在 `UndoLabel != null` 时才转发；现 `DesktopSurface.HandleKey` 总是调 `DesktopController.Undo`，日志 `撤销：（交给 Shell 撤销栈）` 表示无标签也已转发，栈空由 Shell 自己忽略。
 - 新建后进入重命名框延迟：`DesktopController` 投递 `RenameRequested` 用 `DispatcherPriority.Input`，`ShellIconCache` 回调用 `Background`；旧版 `Background` 被启动后大量图标回调饿住，日志“排队 2047 ms”。
 

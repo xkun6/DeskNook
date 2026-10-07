@@ -138,7 +138,7 @@
 | F2 | 重命名选中的第一项 |
 | Delete / Shift+Delete | `DeleteSelected`：对每个来源分组调用 `ShellContextMenu.InvokeVerb("delete")`，Shift 时带 `CMIC_MASK_SHIFT_DOWN` 即永久删除（走 Shell 的确认框） |
 | Ctrl+A / C / X / V | 全选 / 复制 / 剪切 / 粘贴（`copy`/`cut`/`paste` 动词，作用在 Shell 数据对象上） |
-| Ctrl+Z | `Undo`：总是转发，不看 `UndoLabel`：向隐藏着的系统 DefView 发 `WM_COMMAND 0x701B`（`FCIDM_SHVIEW_UNDO`），由 Shell 自己的撤销栈执行（栈空时 Shell 自己无操作，与 Explorer 一致；Explorer 自己执行的操作如拖进回收站也能撤销）。调用后 `UndoLabel=null`；右键菜单里的“撤消 xxx”项仍只在 `UndoLabel != null` 时出现 |
+| Ctrl+Z | `DesktopController.Undo`：最近一次是桌面整理发起的删除（`_deleteRecord != null`）→ `RecycleBinUndo.Restore` 从回收站直接移回；否则（或移回 0 项）总是转发，不看 `UndoLabel`：向隐藏着的系统 DefView 发 `WM_COMMAND 0x701B`（`FCIDM_SHVIEW_UNDO`），由 Shell 自己的撤销栈执行（栈空时 Shell 自己无操作，与 Explorer 一致；Explorer 自己执行的操作如拖进回收站也能撤销）。调用后 `UndoLabel=null`；右键菜单里的“撤消 xxx”项仍只在 `UndoLabel != null` 时出现。见下“删除撤销” |
 | Enter / Alt+Enter | 打开 / 属性（`properties` 动词） |
 | F5 | `Refresh`：清图标缓存、桌面与全部映射目录重新枚举 |
 | Esc | 清除选择 |
@@ -147,6 +147,16 @@
 重命名框或格子标题编辑期间 `HandleKey` 直接返回 false，不拦截按键。
 
 “粘贴”的目标：最近点击的是映射格子（`ActiveBox`）→ 粘贴到该目录（`_menuBox` + `CreateMenuOverride`），否则粘贴到桌面。
+
+### 删除撤销（`RecycleBinUndo`）
+
+- 原理：桌面整理发起的“进回收站”删除，在 `DesktopController.RecordDelete` 记下路径与时刻（当前 UTC 减 5 秒容忍误差）。Ctrl+Z 时 `Undo` 调 `RecycleBinUndo.Restore`：读 `<卷根>\$Recycle.Bin\<当前用户 SID>` 下的 `$I*` 记录（`RecycleBinUndo.ParseInfo` 支持 v1 固定 520 字节路径与 v2 变长路径），`RecycleBinUndo.Match` 按原路径（不区分大小写）取删除时间不早于记录时刻的最新一条，把同目录 `$R*` 数据文件（目录用 `Directory.Move`，文件用 `File.Move`）直接移回原路径，删除 `$I`，再 `SHChangeNotify(SHCNE_CREATE/MKDIR, SHCNF_PATHW)`。成功 > 0 项则立即 `Refresh(useShownCache:true)`（桌面与全部映射来源）、`UndoLabel=null` 并 return，不再发 `0x701B`；成功 0 项（已永久删除/回收站清空等）仍交给 Shell 撤销栈。
+- 记录入口（非永久删除时记录，Shift/永久删除则 `DesktopController.ClearDeleteRecord`）：`DesktopController.DeleteSelected`；代理菜单 `ExplorerMenuProxy.OnEvent` 的 `pick`（动词 `delete`，用 `ctx.Items`/`ctx.Shift`）；回退菜单 `ShellContextMenu.Show`（取得动词后、`Invoke` 之前）；拖到回收站 `DesktopDropTarget.Drop`（`_forwardTag` 为回收站 `::{645FF040-…}` 的 `item:` 标签且是内部拖动，转发前按 `DragKeys` 取项，`MK_SHIFT` 视为永久删除）。
+- 清除记录：`DesktopController.ArmUndo` 收到非“删除”操作、`DesktopController.CommitRename` 成功、`DesktopController.MoveToNewFolder`、`DesktopController.Undo` 执行后。
+- 为什么不用 Shell 撤销：Shell 撤销/回收站“还原”会让 Explorer 桌面线程为每个文件在系统 ListView 里找空位（`comctl32!CLVSlotsManager::FindFreeSlot`），约 260 图标时每项约 2 秒、Explorer 未响应；实测还原 5 个文件 Shell 约 10 秒，直接移回只要 9ms 且 Explorer 无卡顿。做法参照腾讯桌面整理 4.3 的 `UndoDeleteManager`（RecordDelete / RestoreItem / Undo，原路径已存在则跳过）。
+- 限制：只覆盖 DeskNook 发起的删除；Shift 永久删除、未进回收站的删除不可撤销；原位置已有同名项或原父目录不存在则跳过该项；Explorer 自己的撤销栈仍保留这次删除记录，之后在资源管理器里 Ctrl+Z 可能提示找不到文件；Explorer 自己执行、DeskNook 不知情的操作（如在资源管理器里的删除/粘贴）插在中间时，Ctrl+Z 仍会撤销这次删除而不是那个操作。
+- 位置：文件移回后图标位置靠“消失项保留 7 天”自动恢复（见 [boxes.md](boxes.md)“消失项保留”）。
+- 单测：`tests/DeskNook.Tests/RecycleBinUndoTests.cs`（只测 `ParseInfo`/`Match` 纯函数，不碰真实回收站与桌面）。
 
 ### 剪切半透明
 

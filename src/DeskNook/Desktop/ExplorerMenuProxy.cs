@@ -336,6 +336,11 @@ internal sealed class ExplorerMenuProxy
                 if (IsNewSubmenu(ev.Parent)) _c.ExpectNewItem();
                 if (ev.Verb is "paste" or "pastelink" || ev.Title.StartsWith("粘贴", StringComparison.Ordinal))
                     _c.ArmUndo(ev.Verb == "pastelink" ? "创建快捷方式" : "复制");
+                if (ev.Verb.Equals("delete", StringComparison.OrdinalIgnoreCase) && ctx != null && ctx.Items.Count > 0)
+                {
+                    if (ctx.Shift) _c.ClearDeleteRecord(); // Shift = 永久删除，不进回收站
+                    else _c.RecordDelete(ctx.Items);
+                }
                 break;
 
             case "verb":

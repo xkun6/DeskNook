@@ -240,6 +240,12 @@ internal static class ShellContextMenu
                 ctx.Controller.ExpectNewItem();
             }
 
+            if (verb != null && verb.Equals("delete", StringComparison.OrdinalIgnoreCase) && ctx.Items.Count > 0)
+            {
+                if (ctx.Shift) ctx.Controller.ClearDeleteRecord(); // Shift = 永久删除，不进回收站
+                else ctx.Controller.RecordDelete(ctx.Items);
+            }
+
             // 菜单消息转发已不需要，先清掉再执行命令（命令可能弹对话框、跑消息循环）
             _msg2 = null;
             _msg3 = null;

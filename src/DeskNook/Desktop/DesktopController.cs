@@ -55,6 +55,7 @@ internal sealed class DesktopController : IDisposable
     public string? UndoLabel { get; private set; }
     private string? _pendingOp;
     private DateTime _pendingOpUntil;
+    private (List<string> Paths, DateTime SinceUtc)? _deleteRecord; // 最近一次桌面整理发起的“进回收站”删除
 
     public LayoutState Layout { get; private set; } = new();
     public AppSettings Settings { get; private set; } = new();
@@ -594,7 +595,8 @@ internal sealed class DesktopController : IDisposable
     {
         var items = SelectedItems;
         if (items.Count == 0) return;
-        if (!permanent) ArmUndo("删除");
+        if (!permanent) RecordDelete(items);
+        else _deleteRecord = null;
         foreach (var group in items.GroupBy(i => i.Container))
             ShellContextMenu.InvokeVerb(group.ToList(), "delete", ActiveHwnd, shift: permanent);
     }
@@ -617,13 +619,41 @@ internal sealed class DesktopController : IDisposable
 
     public void ArmUndo(string op)
     {
+        if (op != "删除") _deleteRecord = null;
         _pendingOp = op;
         _pendingOpUntil = DateTime.UtcNow + TimeSpan.FromSeconds(20);
     }
 
-    /// <summary>撤销：把 Explorer 的 FCIDM_SHVIEW_UNDO(0x701B) 发给系统里隐藏着的 DefView，由 Shell 的撤销栈执行（栈空时 Shell 自己无操作）。不依赖 UndoLabel。</summary>
+    /// <summary>记录一次桌面整理发起的删除（进回收站），Ctrl+Z 时由 <see cref="RecycleBinUndo"/> 直接移回；时刻提前 5 秒容忍时钟/异步误差。</summary>
+    public void RecordDelete(IEnumerable<DesktopItem> items)
+    {
+        var paths = items.Where(i => i.FilePath != null).Select(i => i.FilePath!).ToList();
+        if (paths.Count == 0) return;
+        _deleteRecord = (paths, DateTime.UtcNow - TimeSpan.FromSeconds(5));
+        ArmUndo("删除");
+        Log.Info($"删除撤销：记录 {paths.Count} 项");
+    }
+
+    /// <summary>永久删除（Shift）：不进回收站，清掉删除记录。</summary>
+    public void ClearDeleteRecord() => _deleteRecord = null;
+
+    /// <summary>撤销：最近一次是桌面整理发起的删除则直接从回收站移回（避开 Shell 还原时 Explorer 逐项找空位的数秒卡顿）；否则把 Explorer 的 FCIDM_SHVIEW_UNDO(0x701B) 发给系统里隐藏着的 DefView，由 Shell 的撤销栈执行（栈空时 Shell 自己无操作）。不依赖 UndoLabel。</summary>
     public void Undo()
     {
+        if (_deleteRecord is { } rec)
+        {
+            _deleteRecord = null;
+            var n = RecycleBinUndo.Restore(rec.Paths, rec.SinceUtc);
+            if (n > 0)
+            {
+                Source.Refresh(useShownCache: true);
+                foreach (var rt in _mapped.Values) rt.Source.Refresh(useShownCache: true);
+                UndoLabel = null;
+                _pendingOp = null;
+                Log.Info($"撤销：删除已从回收站移回 {n} 项");
+                return;
+            }
+        }
         var defView = DesktopShell.FindDesktop().DefView;
         if (defView == IntPtr.Zero) return;
         Log.Info($"撤销：{UndoLabel ?? "（交给 Shell 撤销栈）"}");
@@ -756,6 +786,7 @@ internal sealed class DesktopController : IDisposable
         var mapped = item.Container.Length > 0;
         var newKey = mapped ? item.Container + DesktopItemSource.KeySeparator + res.Value.Key : res.Value.Key;
         UndoLabel = "重命名";
+        _deleteRecord = null;
         if (mapped && _mapped.TryGetValue(item.Container, out var rt))
         {
             rt.Source.AddRenameHint(key, newKey);
@@ -1093,6 +1124,7 @@ internal sealed class DesktopController : IDisposable
     public void MoveToNewFolder(IReadOnlyList<string> paths, bool renameAfter)
     {
         if (!MenuExtensions.InSameFolder(paths, out var dir)) return;
+        _deleteRecord = null;
         try
         {
             var name = "新建文件夹";

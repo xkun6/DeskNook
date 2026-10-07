@@ -21,6 +21,7 @@ dotnet test DeskNook.sln -c Release
 | `BoxTests.cs` | 格子布局：key 唯一归属、避开格子覆盖、消失项 7 天、改名同步、显示器缺失暂落主屏、有效矩形夹取/折叠、解散（普通/映射/避开其他格子）、`MoveToBox` 插入与调序语义、排序（名称自然排序/大小/类型/时间/虚拟项在前）、内容排布与插入位置、**移动/缩放逐像素与吸附阈值**、新建选位；`BoxPersistenceTests`：旧 `layout.json` 兼容、完整往返 |
 | `OrganizerTests.cs` | `AutoOrganizer`：各类扩展名归类、文件夹/虚拟项、自定义规则顺序、整理建格子（靠右从上到下再向左不重叠）、复用同名格子、映射格子/映射项不参与、避开已有格子与不整理的自由图标、空计划、**撤销**（恢复布局、整理后又改动只回滚本次、已消失项忽略、记录读写与损坏）；`SettingsStoreTests`：默认规则、往返无残留、损坏备份、规则清理 |
 | `MenuProtocolTests.cs` | `MenuExtensions.BuildWire`：适用条件过滤并分配唯一 Id、动态标题与状态、子菜单只保留适用子项、分隔线与 `FallbackOnly`、资源管理器来源只出现 `InExplorer` 项、位置名映射；协议 JSON 往返、中文不转义、**字段名与 C++ 侧约定一致**（查询/应答/代理请求）、解析容错、非法 JSON 返回 null；`MenuContext.IsFileSystemPath`、`InSameFolder` |
+| `RecycleBinUndoTests.cs` | `RecycleBinUndo`：`ParseInfo` 解析 v1/v2 `$I` 字节、截断与非法长度返回 null；`Match` 取最新、忽略早于 since 的、路径大小写不敏感、`$I`→`$R` 路径（只测纯函数，不碰真实回收站与桌面） |
 | `Stage4Tests.cs` | `AutoStart`（注入专用注册表键，写入带引号路径、禁用幂等、状态以注册表为准、取不到 exe 路径失败）；设置默认值/旧版 `settings.json` 兼容/往返、透明度夹取、图标大小模式、日志保留天数规整与 `Log.ExpiredFiles` 过期判定；`layout.json` 隐藏状态兼容；`ProxyVersionTests`（`ExplorerMenuProxy.IsOutdated` 判定） |
 
 不在单测里、必须靠自动化/手测的：Win32/COM 调用、宿主窗口、`BoxControl` 渲染与鼠标、菜单代理、安装包。
