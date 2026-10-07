@@ -84,7 +84,7 @@ try {
         $line = Wait-FileLog $Script:ShellLogPath '请求 r\d+ kind=background' $mk 5
         Assert-True $line '代理日志里没有 kind=background 的请求'
         $Script:Info.DnBg = $r
-        Assert-True (Has-Text $r.Texts '一键整理') '缺少 一键整理'
+        Assert-True (-not (Has-Text $r.Texts '一键整理')) '外层不应再有 一键整理'
         Assert-True (Has-Text $r.Texts '桌面整理') '缺少 桌面整理 子菜单'
         "项数=$($r.Texts.Count) 出现耗时=$($r.Ms)ms"
     }
@@ -168,13 +168,13 @@ try {
             $texts = @(Get-MenuTexts)
             Save-Screen -Name 'm-4a-submenu' | Out-Null
             Press-Key Escape; Press-Key Escape; Wait-Ms 300
-            foreach ($need in '新建格子', '新建映射格子', '撤销整理', '桌面整理设置', '退出桌面整理') { Assert-True (Has-Text $texts $need) "子菜单缺少 $need（$($texts -join '|')）" }
+            foreach ($need in '新建格子', '新建映射格子', '一键整理', '撤销整理', '桌面整理设置', '退出桌面整理') { Assert-True (Has-Text $texts $need) "子菜单缺少 $need（$($texts -join '|')）" }
             "子菜单项：$($texts -join '|')"
         }
         Invoke-Test '一键整理 + 撤销整理' {
             $before = Get-BoxCount
             Click-Mouse $bp.X $bp.Y -Button Right -Delay 900
-            Click-MenuPath @('一键整理')
+            Click-MenuPath @('桌面整理', '一键整理')
             $ok = Wait-Layout { param($l) @($l.Boxes).Count -gt $before } 6
             Save-Screen -Name 'm-4b-organized' | Out-Null
             Assert-True $ok '一键整理后没有新增格子'
@@ -352,7 +352,7 @@ try {
             Start-DeskNook -AppArgs @('--no-proxy') | Out-Null; Wait-Ms 2500
             $r = Capture-Menu 'm-10-fallback-bg' $bp.X $bp.Y
             Assert-True (Has-Text $r.Texts '刷新') "回退菜单不正常：$($r.Texts -join '|')"
-            Assert-True (Has-Text $r.Texts '一键整理') '回退菜单缺少自定义项'
+            Assert-True (Has-Text $r.Texts '桌面整理') '回退菜单缺少自定义项'
             $line = Wait-Log -Pattern '菜单类键' -Since $mk -TimeoutSec 5
             Assert-True $line '日志里没有进程内菜单的痕迹'
             $proxied = @(Get-FileSince $Script:ShellLogPath $smk | Where-Object { $_ -match '请求 r\d+ kind=' })

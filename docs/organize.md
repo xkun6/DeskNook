@@ -4,7 +4,7 @@
 
 ## 一键整理 `AutoOrganizer`
 
-入口：右键空白处“一键整理”、“桌面整理 ▸ 一键整理”、托盘“一键整理”（托盘会先 `SetIconsVisible(true)`）→ `DesktopController.OrganizeAll()`：`Plan` → `Apply` → 保存撤销记录 → `AfterBoxChange`（对账/同步/保存/刷新）。**只改布局，不动文件。**
+入口：右键空白处“桌面整理 ▸ 一键整理”、托盘“一键整理”（托盘会先 `SetIconsVisible(true)`）→ `DesktopController.OrganizeAll()`：`Plan` → `Apply` → 保存撤销记录 → `AfterBoxChange`（对账/同步/保存/刷新）。**只改布局，不动文件。**
 
 ### 规则与分类
 

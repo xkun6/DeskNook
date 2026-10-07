@@ -214,13 +214,8 @@ internal static class MenuExtensions
             FallbackOnly = true, DynamicTitle = c => $"撤消 {c.Controller.UndoLabel}(&U)	Ctrl+Z", Handler = c => c.Controller.Undo(),
         },
 
-        // ---- 桌面空白处：外层平铺“一键整理”，其余收进“桌面整理 ▸”子菜单（腾讯桌面整理同款布局）----
+        // ---- 桌面空白处：自定义项全部收进“桌面整理 ▸”子菜单 ----
         Sep(MenuPosition.BeforeNew, c => c.IsDesktopBackground),
-        new()
-        {
-            Title = "一键整理(&Z)", Position = MenuPosition.BeforeNew, Icon = I("organize"), Applies = c => c.IsDesktopBackground,
-            Handler = c => c.Controller.OrganizeAll(),
-        },
         new()
         {
             Title = "桌面整理(&D)", Position = MenuPosition.BeforeNew, Icon = I("menu-app"), Applies = c => c.IsDesktopBackground,

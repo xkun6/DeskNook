@@ -71,7 +71,7 @@ Explorer 里的 DLL 一旦加载就被 PIN，**升级后新 DLL 不会替换已�
 
 新旧代理的关系：新版启动时会尝试 `quit` 旧代理再加载新 DLL（新旧文件名不同，两份都在 Explorer 里，旧的被钉住不会卸载）；但已被 COM 缓存的 **Shell 扩展 handler** 仍是旧 DLL，直到 Explorer 重启。所以协议变更后“资源管理器窗口里的右键菜单缺新项/行为旧”需要重启 Explorer。
 
-新旧并存时请求 Id 对不上：请求 Id 存在各 DLL 副本自己的线程局部变量里（`proxy.cpp:t_req`，`CurrentRequestId`），新代理设置的 Id 旧 handler 读不到，查询里 `req` 为空。DeskNook 端兜底：`MenuPipeServer.Evaluate` 在 `req` 为空且 `proc=explorer.exe` 时，用 `ExplorerMenuProxy.ContextOfUntagged`（纯函数 `FindUntagged`）认领最近 5s 内发起、尚未收到 `closed`、`kind` 一致的请求；没有可认领的才当作普通资源管理器窗口查询（`MenuSource.Explorer`）。没有这层兜底，桌面背景菜单里 `IsDesktopBackground` 为 false，“一键整理/桌面整理”整个消失（图标菜单因 `InExplorer` 项照常出现，容易误判）。
+新旧并存时请求 Id 对不上：请求 Id 存在各 DLL 副本自己的线程局部变量里（`proxy.cpp:t_req`，`CurrentRequestId`），新代理设置的 Id 旧 handler 读不到，查询里 `req` 为空。DeskNook 端兜底：`MenuPipeServer.Evaluate` 在 `req` 为空且 `proc=explorer.exe` 时，用 `ExplorerMenuProxy.ContextOfUntagged`（纯函数 `FindUntagged`）认领最近 5s 内发起、尚未收到 `closed`、`kind` 一致的请求；没有可认领的才当作普通资源管理器窗口查询（`MenuSource.Explorer`）。没有这层兜底，桌面背景菜单里 `IsDesktopBackground` 为 false，“桌面整理 ▸”整个消失（图标菜单因 `InExplorer` 项照常出现，容易误判）。
 
 ## 注册
 
@@ -388,7 +388,7 @@ new()
 | `BeforeNew` | **等同 Bottom**：C++ 没有实现“新建之前”的定位 | “新建”子菜单（及其前面分隔线）之前 |
 | `Bottom` | 插到 Shell 调用 handler 时传入的 `indexMenu` 处（即第三方 handler 的位置），不是绝对末尾 | 菜单末尾 |
 
-所以 Explorer 里“桌面整理 ▸”和“一键整理”（`BeforeNew`）实际出现的位置由 Shell 传给 handler 的 `indexMenu` 决定；想要精确定位需要改 C++（那就要遵守下面的安全约束），先用真机截图对照（`tools/test/test-menu-v2.ps1` 有 C/D 对比）。
+所以 Explorer 里“桌面整理 ▸”（`BeforeNew`）实际出现的位置由 Shell 传给 handler 的 `indexMenu` 决定；想要精确定位需要改 C++（那就要遵守下面的安全约束），先用真机截图对照（`tools/test/test-menu-v2.ps1` 有 C/D 对比）。
 
 ### 动词拦截表
 
