@@ -82,6 +82,29 @@ internal interface IShellItemImageFactory
     [PreserveSig] int GetImage(Win32.SIZE size, uint flags, out IntPtr phbm);
 }
 
+/// <summary>
+/// 系统图像列表（SHGetImageList 返回）。必须用 COM 接口声明而不是 P/Invoke comctl32 的 ImageList_*：
+/// 本程序可能没有加载 comctl32 v6，混用会崩。vtable 顺序与数量必须与系统一致（前 14 个）；用不到的方法参数用 IntPtr 占位。
+/// </summary>
+[ComImport, Guid("46EB5926-582E-4017-9FDF-E8998DAA0950"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IImageList
+{
+    [PreserveSig] int Add(IntPtr hbmImage, IntPtr hbmMask, out int pi);
+    [PreserveSig] int ReplaceIcon(int i, IntPtr hicon, out int pi);
+    [PreserveSig] int SetOverlayImage(int iImage, int iOverlay);
+    [PreserveSig] int Replace(int i, IntPtr hbmImage, IntPtr hbmMask);
+    [PreserveSig] int AddMasked(IntPtr hbmImage, int crMask, out int pi);
+    [PreserveSig] int Draw(IntPtr pimldp);
+    [PreserveSig] int Remove(int i);
+    [PreserveSig] int GetIcon(int i, int flags, out IntPtr picon);
+    [PreserveSig] int GetImageInfo(int i, IntPtr pImageInfo);
+    [PreserveSig] int Copy(int iDst, IntPtr punkSrc, int iSrc, uint uFlags);
+    [PreserveSig] int Merge(int i1, IntPtr punk2, int i2, int dx, int dy, IntPtr riid, out IntPtr ppv);
+    [PreserveSig] int Clone(IntPtr riid, out IntPtr ppv);
+    [PreserveSig] int GetImageRect(int i, IntPtr prc);
+    [PreserveSig] int GetIconSize(out int cx, out int cy);
+}
+
 [ComImport, Guid("000214E2-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IShellBrowser
 {
@@ -244,6 +267,7 @@ internal static class ShellApi
     public static readonly Guid IID_IDataObject = new("0000010E-0000-0000-C000-000000000046");
     public static readonly Guid IID_IDropTarget = new("00000122-0000-0000-C000-000000000046");
     public static readonly Guid IID_IShellItemImageFactory = new("BCC18B79-BA16-442F-80C4-8A59C30C463B");
+    public static readonly Guid IID_IImageList = new("46EB5926-582E-4017-9FDF-E8998DAA0950");
     public static readonly Guid IID_IShellBrowser = new("000214E2-0000-0000-C000-000000000046");
     public static readonly Guid SID_STopLevelBrowser = new("4C96BE40-915C-11CF-99D3-00AA004AE837");
     public static readonly Guid CLSID_ShellWindows = new("9BA05972-F6A8-11CF-A442-00A0C90A8F39");

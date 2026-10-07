@@ -51,6 +51,12 @@ DeskNook 通过 `ShowWindow(SW_HIDE)` 隐藏系统 `SysListView32`，而不是�
 - vswhere 必须带 `-requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64`。
 - 测试步骤会编译 C++，所以 `dotnet test` 也依赖 VS。
 
+## 大图标下某些程序图标很小 / 在左上角
+
+现象：图标尺寸设为大（如 96）时，个别程序（只带 32/48 图标的老程序）的图标缩在格子左上角。
+
+原因：大尺寸选的是系统图像列表 `SHIL_JUMBO`（256 画布），只有小图标的程序在里面是左上角一个小图。回退逻辑：`ShellIconSelect.JumboContentTooSmall`（alpha>0 包围盒的右下界都 ≤ 画布 1/4 或全透明则判定不可用），调用处 `ShellIconCache.LoadFromImageList`，判定为小内容时改取 `SHIL_EXTRALARGE` 同索引图标。阈值在 `ShellIconSelect.JumboContentTooSmall` 里（`width / 4`、`height / 4`），单测在 `ShellIconSelectTests`。详见 [desktop-items.md](desktop-items.md)“图标缓存”。
+
 ## 与原生菜单仍有的差异
 
 - 动词拦截（如“显示桌面图标”“排序方式”“查看”）：代理路径里拦截器的返回值**被忽略**，行为靠代理自己拦截并通知主程序；改拦截逻辑时别指望返回值生效。

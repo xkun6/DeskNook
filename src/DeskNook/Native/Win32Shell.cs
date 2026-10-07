@@ -122,6 +122,27 @@ internal static partial class Win32
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string szPath;
     }
 
+    // 系统图像列表（阶段 1 图标）：SHGetFileInfo(SHGFI_PIDL|SHGFI_SYSICONINDEX) 取图标索引，SHGetImageList 取列表
+    public const uint SHGFI_PIDL = 0x8;
+    public const uint SHGFI_SYSICONINDEX = 0x4000;
+    public const int SHIL_LARGE = 0, SHIL_SMALL = 1, SHIL_EXTRALARGE = 2, SHIL_JUMBO = 4;
+    public const int ILD_TRANSPARENT = 0x1;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct SHFILEINFO
+    {
+        public IntPtr hIcon;
+        public int iIcon;
+        public uint dwAttributes;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string szDisplayName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)] public string szTypeName;
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    public static extern IntPtr SHGetFileInfoW(IntPtr pszPath, uint dwFileAttributes, ref SHFILEINFO psfi, uint cbFileInfo, uint uFlags);
+    [DllImport("shell32.dll")]
+    public static extern int SHGetImageList(int iImageList, ref Guid riid, out IntPtr ppv);
+
     [DllImport("shell32.dll")] public static extern int SHGetStockIconInfo(int siid, uint flags, ref SHSTOCKICONINFO psii);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool DestroyIcon(IntPtr hIcon);
 

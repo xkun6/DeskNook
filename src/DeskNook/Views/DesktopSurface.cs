@@ -65,6 +65,7 @@ internal sealed class DesktopSurface : Canvas
         _c.ItemsChanged += Rebuild;
         _c.SelectionChanged += UpdateSelection;
         _c.IconInvalidated += OnIconInvalidated;
+        _c.Icons.Upgraded += OnIconUpgraded;
         _c.CutStateChanged += UpdateCut;
         _c.RenameRequested += OnRenameRequested;
         _c.BoxRenameRequested += OnBoxRenameRequested;
@@ -88,6 +89,7 @@ internal sealed class DesktopSurface : Canvas
         _c.ItemsChanged -= Rebuild;
         _c.SelectionChanged -= UpdateSelection;
         _c.IconInvalidated -= OnIconInvalidated;
+        _c.Icons.Upgraded -= OnIconUpgraded;
         _c.CutStateChanged -= UpdateCut;
         _c.RenameRequested -= OnRenameRequested;
         _c.BoxRenameRequested -= OnBoxRenameRequested;
@@ -274,6 +276,13 @@ internal sealed class DesktopSurface : Canvas
         foreach (var (k, ctl) in _controls)
             if (key == null || string.Equals(k, key, StringComparison.OrdinalIgnoreCase))
                 LoadIcon(ctl, ctl.Item, ctl.IconPx > 0 ? ctl.IconPx : px);
+    }
+
+    /// <summary>阶段 2 缩略图就绪：该 key 的控件仍是同一像素尺寸时换上新图。</summary>
+    private void OnIconUpgraded(string key, int px)
+    {
+        if (_controls.TryGetValue(key, out var ctl) && ctl.IconPx == px && _c.Icons.TryGet(key, px) is { } bmp)
+            ctl.SetIcon(bmp);
     }
 
     private void UpdateSelection()

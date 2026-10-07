@@ -62,14 +62,22 @@
 
 ## 图标缓存
 
-`ShellIconCache`：
+参照腾讯桌面整理（`Features64.dll`：`SHGetImageList` + `SHGetFileInfoW` 取系统图像列表图标，`CDesktopFileThumbnail` 另取缩略图）改成两阶段：首屏图标毫秒级出现（旧实现每项走 `IShellItemImageFactory.GetImage(flags=0)` 会尝试缩略图，255 项冷启动约 1.5 秒），同类文件共用一个图标索引，新建 `.txt` 之类直接命中。
 
-- 请求 `Get(item, px, done)`：缓存键 `(item.Key, px)`；命中同步回调；未命中排队，相同键的并发请求合并为一个 `_pending` 等待列表。
-- 2 条后台 STA 线程 `ShellIconWorker0/1` 消费队列：`SHCreateItemFromIDList` → `IShellItemImageFactory.GetImage(size, flags=0)` → `GetDIBits` → 补 alpha（位图全 0 alpha 时视为旧式图标，补成不透明）→ 转冻结的 `Pbgra32` `BitmapSource`。
-- 像素尺寸 `px = IconSize(DIP) × 该显示器 Scale`，所以不同 DPI 的显示器各有一份缓存。
-- 快捷方式箭头：`GetImage` 不带箭头，`isLink` 时用 `SHGetStockIconInfo(SIID_LINK=29)` 取系统链接图标，按约 0.65 倍图标宽度叠在左下角（`AddLinkArrow`）。
-- 失效：`Invalidate(null)` 清空全部并 `_generation++`（后台正在加载的过期结果被丢弃）；`Invalidate(key)` 清该 key 的所有尺寸。失败返回 null 时 `IconItemControl.NeedsIcon=true`，下次重建重试。
-- 缓存字典只在 UI 线程访问（后台线程只产出结果并 `BeginInvoke` 回来）。
+`ShellIconCache`（`src/DeskNook/Desktop/ShellIconCache.cs`）：
+
+- 请求 `Get(item, px, done)`：缓存键 `(item.Key, px)`；命中同步回调；未命中排队，相同键的并发请求合并为一个 `_pending` 等待列表。`done` 只回调一次（阶段 1 结果或回退结果）。`Request` 带 `IsFolder`、`IsFileSystem`（= `!DesktopItem.IsVirtual`）、`Stage`（1/2）和入队时的 `Gen`。
+- 两个队列：`_high`（阶段 1）、`_low`（阶段 2）。2 条后台 STA 线程 `ShellIconWorker0/1` 用 `BlockingCollection<Request>.TakeFromAny(new[]{_high,_low})` 消费，数组顺序保证优先取高优先级。`Dispose` 对两个队列 `CompleteAdding`，`TakeFromAny` 随后抛 `InvalidOperationException`/`ArgumentException`，`Worker` 捕获后退出循环。
+- **阶段 1（`RunStage1` → `LoadFromImageList`）**：`SHGetFileInfoW(pidl, SHGFI_PIDL | SHGFI_SYSICONINDEX)` 取系统图标索引 → 按 `px` 选图像列表 → `IImageList.GetIcon(index, ILD_TRANSPARENT)` → `CreateBitmapSourceFromHIcon` → 转冻结 `Pbgra32` → `DestroyIcon`。`SHGetFileInfoW` 失败或取图失败时退回 `LoadImage(pidl, px, isLink, 0)`（即旧的 `GetImage(flags=0)`，补 alpha 逻辑见 `ToBitmapSource`）。
+- **按图标索引共享**：`_indexCache[(图标索引, 列表Id)]`（`ConcurrentDictionary`，工作线程读写）。同类文件（所有 `.txt` 等）同索引，直接命中。快捷方式箭头按项叠加（`AddLinkArrow`，仍用 `SHGetStockIconInfo(SIID_LINK=29)`，按约 0.65 倍图标宽度叠在左下角），不写进共享缓存。`Invalidate(null)` 清空；失效后才到达的结果（`req.Gen != _generation`）不写入。
+- **列表选择（`ShellIconSelect.SelectList`）**：候选 `SHIL_SMALL=1`、`SHIL_LARGE=0`、`SHIL_EXTRALARGE=2`、`SHIL_JUMBO=4`，用 `IImageList.GetIconSize` 取各自实际尺寸（随系统 DPI 变，如 100% 为 16/32/48/256，150% 为 24/48/72/256；`ImageListSet.Sizes` 进程内只取一次），选**尺寸 ≥ px 的最小那个**，都不够选 JUMBO。像素尺寸 `px = IconSize(DIP) × 该显示器 Scale`，不同 DPI 的显示器各有一份 `(Key, px)` 缓存。
+- **JUMBO 小图标回退（`ShellIconSelect.JumboContentTooSmall`，调用处 `ShellIconCache.ReadListIcon(checkJumbo)` / `LoadFromImageList`）**：只有 32/48 图标的程序，JUMBO 列表里是 256 画布左上角一个小图。取到 JUMBO 后算 alpha>0 像素包围盒，右下界都 ≤ 画布 1/4（内容只占左上 ≤64×64）或全透明时，改用 `SHIL_EXTRALARGE` 的同索引图标；回退后的结果仍按 `(索引, JUMBO)` 缓存。
+- **`IImageList` 用 COM 接口声明**（`ShellCom.cs:IImageList`，IID `46EB5926-582E-4017-9FDF-E8998DAA0950`，vtable 前 14 个方法顺序不能错），不 P/Invoke `comctl32` 的 `ImageList_*`（本程序可能没加载 comctl32 v6，混用会崩）。`SHGetImageList` 返回的是进程级单例，按指针身份复用的 RCW 绑定在第一个取到它的 STA 线程上，另一个线程再取会 `E_NOINTERFACE`；所以 `SHGetImageList` 声明为 `out IntPtr`，`ImageListSet.Get` 用 `Marshal.GetUniqueObjectForIUnknown` 让每个工作线程持有自己的 RCW，线程退出时 `ReleaseComObject`。
+- **阶段 2（`RunStage2`）**：只对“有文件系统路径（`IsFileSystem`）、不是文件夹、不是快捷方式、阶段 1 走的是图像列表而非回退”的项，阶段 1 完成后向 `_low` 排一个任务：`GetImage(size, SIIGBF_THUMBNAILONLY=0x8)`。成功则在 UI 线程更新 `_cache[(Key, px)]` 并触发 `Upgraded(key, px)`；失败（无缩略图，常见）静默忽略；`req.Gen != _generation`（期间发生过失效）的结果丢弃。
+- **界面更新**：`DesktopSurface` 在构造里订阅 `_c.Icons.Upgraded`、`Detach` 里退订（与 `IconInvalidated` 同处）；`OnIconUpgraded` 在 `_controls` 里该 key 的控件 `IconPx == px` 时 `ctl.SetIcon(新图)`。格子内的图标同样经 `DesktopSurface.BindItem → LoadIcon`，无需另改。
+- **日志阈值**：工作线程里单个阶段 1 超过 100 ms 记 `图标阶段1耗时 N ms：<key>`，阶段 2 超过 500 ms 记 `图标阶段2耗时 N ms：<key>`；`DesktopSurface.LoadIcon` 里原有的 `图标加载耗时 N ms`（>500 ms，含排队等待）保留。
+- 失效：`Invalidate(null)` 清空全部（含 `_indexCache`）并 `_generation++`（后台正在加载的过期结果被丢弃）；`Invalidate(key)` 清该 key 的所有尺寸并 `_generation++`。失败返回 null 时 `IconItemControl.NeedsIcon=true`，下次重建重试。
+- 线程模型：`_cache`/`_pending` 只在 UI 线程访问（后台线程只产出冻结的 `BitmapSource` 并 `BeginInvoke` 回来）；工作线程里的异常一律捕获记日志，不会越出线程。
 
 ## 首次导入系统图标位置
 
