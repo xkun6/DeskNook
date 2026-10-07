@@ -151,6 +151,7 @@
 | `HKLM\Software\DeskNook` 值 `InstallDir`（字符串） | 安装目录（`[INSTALLFOLDER]`），1.0.1 起由 MSI 写入、卸载时随组件删除；升级时 `RegistrySearch` 读回作为默认安装目录 | `installer/Package.wxs` |
 | `HKCU\Software\DeskNookTests` | 仅单测使用（`AutoStartTests` 的专用 Run 键），测试后删除 | 测试 |
 | 只读：`HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` 的 `Hidden`、`ShowSuperHidden` | 决定桌面枚举是否包含隐藏/超级隐藏项 | 读取方 `DesktopItemSource` |
+| 只读：`HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Discardable\PostSetup\ShellNew` 的 `Classes`（REG_MULTI_SZ），与 `HKCR\<ext>[\<ProgID>]\ShellNew` | “新建”子菜单：哪些扩展名可由 DeskNook 自己创建，以及 `NullFile`/`Data`/`FileName` 定义；含 `Handler`/`Command` 的不处理 | 读取方 `ShellNewItems.InterceptVerbs`、`ShellNewItems.Resolve` |
 
 注册/卸载代码在 `ShellExtRegistrar`；改动注册内容后要 `SHChangeNotify(SHCNE_ASSOCCHANGED)`（代码已处理）。**CLSID 在 `ShellExtRegistrar.ClsidText` 与 `src/DeskNookShellExt/desknook.h` 两处，必须一致**，也不要随意换（换了等于换名，旧注册要清理）。
 

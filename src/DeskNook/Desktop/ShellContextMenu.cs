@@ -225,7 +225,20 @@ internal static class ShellContextMenu
             if (verb != null && MenuExtensions.VerbInterceptors.TryGetValue(verb, out var intercept) && intercept(ctx))
                 return;
 
-            if (ctx.IsBackground && IsInNewSubmenu(hmenu, cmd)) ctx.Controller.ExpectNewItem();
+            if (ctx.IsBackground && IsInNewSubmenu(hmenu, cmd))
+            {
+                // 新建文件夹/文件由 DeskNook 自己创建（原因见 ShellNewItems）；失败再交给 Shell
+                if (verb != null && ShellNewItems.InterceptVerbs().Contains(verb, StringComparer.OrdinalIgnoreCase))
+                {
+                    var sb = new StringBuilder(128);
+                    Win32.GetMenuString(hmenu, cmd, sb, sb.Capacity, Win32.MF_BYCOMMAND);
+                    var np = new StringBuilder(128);
+                    Win32.GetMenuString(hmenu, (uint)FindNewSubmenu(hmenu), np, np.Capacity, Win32.MF_BYPOSITION);
+                    if (ctx.Controller.CreateNewItem(ctx, verb, ShellNewItems.CleanTitle(sb.ToString()), ShellNewItems.CleanTitle(np.ToString()))) return;
+                    Log.Info("新建：DeskNook 创建失败，改交给 Shell 执行");
+                }
+                ctx.Controller.ExpectNewItem();
+            }
 
             // 菜单消息转发已不需要，先清掉再执行命令（命令可能弹对话框、跑消息循环）
             _msg2 = null;

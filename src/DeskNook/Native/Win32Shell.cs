@@ -18,6 +18,7 @@ internal static partial class Win32
     public const int MA_ACTIVATE = 1;
 
     // 菜单
+    public const uint MF_BYCOMMAND = 0x0000;
     public const uint MF_BYPOSITION = 0x0400;
     public const uint MIIM_STATE = 0x01;
     public const uint MIIM_ID = 0x02;

@@ -255,10 +255,14 @@ DeskNook 没运行时桌面是系统原生的，右键由 Explorer 自己弹；�
 
 ## 动词拦截
 
-DeskNook 拿不到的“交给 DeskNook 自己做”的动作，分两类：
+DeskNook 拿不到的“交给 DeskNook 自己做”的动作，分三类：
 
 1. **按标题拦截“显示桌面图标”**（`proxy.cpp:IsShowDesktopIcons`，匹配“显示桌面图标”/“Show desktop icons”）：不执行，发 `verb{showdesktopicons}`，DeskNook `SetIconsVisible(!IconsVisible)`。同时 `FixIconsItem` 在菜单弹出前和每个子菜单 `WM_INITMENUPOPUP` 时把该项的勾选改成 DeskNook 的真实状态（系统 ListView 永远是隐藏的，原生勾选不反映 DeskNook）。
 2. **按动词名拦截**：请求里的 `interceptVerbs`（= `MenuExtensions.VerbInterceptors.Keys`），用 `GetCommandString(GCS_VERBW)` 取动词名后不区分大小写比较。命中则发 `verb{<动词>}` 且**不再 `InvokeCommand`**，DeskNook 在 `ExplorerMenuProxy.OnEvent` 里 `VerbInterceptors[动词](ctx)`。当前只有 `rename`（没有真实 DefView 宿主，系统重命名在 DeskNook 画布上不生效，改为 DeskNook 原位重命名）。
+3. **“新建”子菜单**（仅 DeskNook 自己弹的桌面/格子空白处菜单，`ctx.InDeskNook && ctx.IsBackground`）：`ExplorerMenuProxy.TryShow` 把 `ShellNewItems.InterceptVerbs()`（`NewFolder` + 能自己处理的 ShellNew 扩展名，如 `.txt`）追加进 `interceptVerbs`。代理对一次选择先发 `pick{verb,title,parent}` 再发 `verb{verb}`（只带动词，`proxy.cpp` 里命中拦截表后不 `InvokeCommand`），所以 `ExplorerMenuProxy.OnEvent` 的 `pick` 把标题和父菜单记进 `Pending.PickTitle/PickParent`，`verb` 时若父菜单是“新建/New”且动词属于新建（`ShellNewItems.IsNewVerb`），调 `DesktopController.CreateNewItem` 由 DeskNook 用 `IFileOperation.NewItem` 创建（带撤销记录）并立即刷新进入重命名。原因：交给 Explorer 时 DefView 会在隐藏的系统 ListView 上进入它自己的重命名，Explorer 桌面线程因此忙 1.4~6 秒，DeskNook 抢前台、聚焦重命名框都要等它（详见 [desktop-items.md](desktop-items.md)）。注意：
+   - 含 `Handler`/`Command` 的 ShellNew（快捷方式 `.lnk`、库 `.library-ms` 等）不在 `InterceptVerbs()` 里，仍交给 Explorer 执行；`FileName` 找不到模板的扩展名同样不拦截（判定见 `ShellNewItems.Classify`）。
+   - 代理路径下被拦截的新建若失败（`CreateNewItem` 返回 false）**无法回退给 Explorer**：代理已吞掉命令，只记日志“新建失败”。
+   - 回退路径 `ShellContextMenu.Show` 里同样先自己创建（`IsInNewSubmenu` 且动词在 `InterceptVerbs()` 内），失败才继续 `Invoke` 给 Shell。
 
 注意两条路径的语义差别（容易踩坑）：
 

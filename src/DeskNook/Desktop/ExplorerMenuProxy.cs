@@ -15,7 +15,13 @@ namespace DeskNook.Desktop;
 internal sealed class ExplorerMenuProxy
 {
     /// <summary>已发给代理、尚未关闭的菜单请求。Closed 由代理回报 closed 事件时置位。</summary>
-    internal sealed record Pending(MenuContext Context, DateTime Created, string Kind) { public bool Closed { get; set; } }
+    internal sealed record Pending(MenuContext Context, DateTime Created, string Kind)
+    {
+        public bool Closed { get; set; }
+        /// <summary>最近一次 pick 事件的标题与父菜单（verb 事件只带动词，新建子菜单的拦截要用）。</summary>
+        public string PickTitle { get; set; } = "";
+        public string PickParent { get; set; } = "";
+    }
 
     /// <summary>扩展查询不带 req 时，最多认领多久以内发起的请求。</summary>
     internal static readonly TimeSpan UntaggedWindow = TimeSpan.FromSeconds(5);
@@ -236,6 +242,10 @@ internal sealed class ExplorerMenuProxy
 
         req.Id = $"r{Interlocked.Increment(ref _seq)}";
         req.InterceptVerbs = MenuExtensions.VerbInterceptors.Keys.ToList();
+        // 桌面/格子空白处：新建子菜单的文件夹与文件由 DeskNook 自己创建（见 ShellNewItems）
+        if (ctx.InDeskNook && ctx.IsBackground)
+            foreach (var v in ShellNewItems.InterceptVerbs())
+                if (!req.InterceptVerbs.Contains(v, StringComparer.OrdinalIgnoreCase)) req.InterceptVerbs.Add(v);
         req.IconsVisible = _c.IconsVisible;
         Purge();
         _pending[req.Id] = new Pending(ctx, DateTime.UtcNow, req.Kind);
@@ -322,6 +332,7 @@ internal sealed class ExplorerMenuProxy
 
             case "pick":
                 Log.Info($"代理菜单选择：动词={ev.Verb} 标题={ev.Title} 父菜单={ev.Parent}");
+                if (pending != null) { pending.PickTitle = ev.Title; pending.PickParent = ev.Parent; }
                 if (IsNewSubmenu(ev.Parent)) _c.ExpectNewItem();
                 if (ev.Verb is "paste" or "pastelink" || ev.Title.StartsWith("粘贴", StringComparison.Ordinal))
                     _c.ArmUndo(ev.Verb == "pastelink" ? "创建快捷方式" : "复制");
@@ -330,6 +341,12 @@ internal sealed class ExplorerMenuProxy
             case "verb":
                 Log.Info($"代理拦截动词：{ev.Verb}（请求 {ev.Req}）");
                 if (ev.Verb == "showdesktopicons") _c.SetIconsVisible(!_c.IconsVisible);
+                else if (ctx != null && pending != null && IsNewSubmenu(pending.PickParent) && ShellNewItems.IsNewVerb(ev.Verb))
+                {
+                    // 代理已吞掉这个命令，失败时无法回退给 Explorer
+                    if (!_c.CreateNewItem(ctx, ev.Verb, pending.PickTitle, pending.PickParent))
+                        Log.Error($"新建失败：动词={ev.Verb} 标题={pending.PickTitle}（代理已吞掉该命令，无法回退给 Explorer）");
+                }
                 else if (ctx != null && MenuExtensions.VerbInterceptors.TryGetValue(ev.Verb, out var intercept))
                 {
                     ctx.Verb = ev.Verb;

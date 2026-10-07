@@ -443,6 +443,31 @@ internal sealed class DesktopController : IDisposable
     /// <summary>用户在“新建”菜单里点了命令：数秒内出现的新项自动选中并重命名。</summary>
     public void ExpectNewItem() => _expectNewUntil = DateTime.UtcNow + NewItemWindow;
 
+    /// <summary>
+    /// 桌面“新建”子菜单的文件夹/文件由本进程创建（不交给 Explorer，免得 DefView 重命名让桌面线程忙 1.4~6 秒），
+    /// 创建后立即同步刷新来源，新项随即选中并进入重命名。目标是映射格子的目录，否则是用户桌面。失败返回 false。
+    /// </summary>
+    public bool CreateNewItem(MenuContext ctx, string verb, string title, string parent)
+    {
+        var sw = Stopwatch.StartNew();
+        MappedRuntime? rt = null;
+        var folder = ctx.Box is { Kind: BoxKind.Mapped } box && _mapped.TryGetValue(box.Id, out rt)
+            ? rt.Path
+            : Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        ExpectNewItem();
+        ArmUndo("新建");
+        var path = ShellNewItems.Create(verb, folder, title, parent, ctx.Hwnd);
+        if (path == null)
+        {
+            _expectNewUntil = DateTime.MinValue;
+            _pendingOp = null;
+            return false;
+        }
+        (rt?.Source ?? Source).Refresh(useShownCache: true);
+        Log.Info($"新建：创建并刷新完成，总耗时 {sw.ElapsedMilliseconds} ms");
+        return true;
+    }
+
     /// <summary>拖入（外部）释放位置：随后出现的新项落在这里。</summary>
     public void SetPendingDrop(string monitor, int col, int row) =>
         _pendingDrop = new PendingDrop(monitor, col, row, null, 0, DateTime.UtcNow + DropWindow);
