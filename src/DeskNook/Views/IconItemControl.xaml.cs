@@ -60,6 +60,7 @@ public partial class IconItemControl : UserControl
             Stack.Orientation = Orientation.Horizontal;
             Frame.HorizontalAlignment = HorizontalAlignment.Left;
             Frame.VerticalAlignment = VerticalAlignment.Stretch;
+            Frame.Width = double.NaN;
             Icon.HorizontalAlignment = HorizontalAlignment.Left;
             Icon.VerticalAlignment = VerticalAlignment.Center;
             Icon.Margin = new Thickness(4, 0, 6, 0);
@@ -76,6 +77,7 @@ public partial class IconItemControl : UserControl
             Stack.Orientation = Orientation.Vertical;
             Frame.HorizontalAlignment = HorizontalAlignment.Center;
             Frame.VerticalAlignment = VerticalAlignment.Top;
+            Frame.Width = cellW - 4; // 固定为文字最大宽度 + 边框，所有图标框等宽（与系统桌面一致）
             Icon.HorizontalAlignment = HorizontalAlignment.Center;
             Icon.VerticalAlignment = VerticalAlignment.Stretch;
             Icon.Margin = new Thickness(2, 6, 2, 3);

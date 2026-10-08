@@ -26,6 +26,7 @@
 - 桌面：对桌面根 `IShellFolder`（`ShellApi.Desktop`）`EnumObjects(SHCONTF_FOLDERS|NONFOLDERS)`，这样自动合并**用户桌面 + 公共桌面 + 虚拟项**。是否包含隐藏/超级隐藏项由注册表 `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` 的 `Hidden`/`ShowSuperHidden`（值为 1）决定，与 Explorer 一致。
 - 过滤：位于用户桌面目录或公共桌面目录的文件系统项直接保留；其余项（用户文件夹、OneDrive、网盘等命名空间项）只保留**系统桌面视图里本来就显示的**——`SystemDesktopView.IsShown`（`IFolderView2.GetItemPosition` 成功即显示）。系统视图取不到（`sysView==null`）时不过滤。只有构造时的首次枚举同步询问，之后只读缓存并由后台线程复核，见“耗时与虚拟项缓存”。
 - 映射目录：`ShellApi.BindFolder(path, out abs)` 绑定该目录，枚举同样走 `EnumerateInto`，不做系统视图过滤。目录绑不上（被删/不可达）返回空列表并记日志。
+- 边框宽度：竖排视图下悬停/选中框 `Frame` 固定宽 `cellW - 4`（文字最大宽 `cellW - 6` 加两侧 1px 边框），所有图标等宽，不随名字长短收缩；横排视图恢复自动宽度（`IconItemControl.Bind`）。
 - 半透明：`IsHidden`/`IsGhosted` 的项以 50% 不透明度显示（`IconItemControl.UpdateVisual`），与系统桌面一致；“剪切”状态也是 50%。
 
 ## 监听与去抖 diff
