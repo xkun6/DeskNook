@@ -62,7 +62,7 @@ public partial class DesktopHostWindow : Window
         _zTimer.Tick += (_, _) =>
         {
             _zTimer.Stop();
-            ReassertBottom("前台变化(延迟复查)");
+            ReassertAboveOwner("前台变化(延迟复查)");
         };
     }
 
@@ -115,10 +115,10 @@ public partial class DesktopHostWindow : Window
         var owner = _desktop.DefViewParent;
         Win32.SetWindowLongPtr(_hwnd, Win32.GWLP_HWNDPARENT, owner);
         ApplyBounds();
-        Win32.SetWindowPos(_hwnd, Win32.HWND_BOTTOM, 0, 0, 0, 0, Win32.SWP_NOACTIVATE | Win32.SWP_NOMOVE | Win32.SWP_NOSIZE);
+        ReassertAboveOwner("挂载");
         _eventHook = Win32.SetWinEventHook(Win32.EVENT_SYSTEM_FOREGROUND, Win32.EVENT_SYSTEM_FOREGROUND,
             IntPtr.Zero, _winEventProc, 0, 0, Win32.WINEVENT_OUTOFCONTEXT);
-        Log.Info($"[{_monitor.DeviceName}] owner=0x{owner:X}({Win32.GetClassNameString(owner)}) 已置底，WinEventHook=0x{_eventHook:X}");
+        Log.Info($"[{_monitor.DeviceName}] owner=0x{owner:X}({Win32.GetClassNameString(owner)}) 已紧贴其上，WinEventHook=0x{_eventHook:X}");
     }
 
     private void AttachAsChild()
@@ -153,11 +153,32 @@ public partial class DesktopHostWindow : Window
             Win32.SWP_NOZORDER | Win32.SWP_NOACTIVATE);
     }
 
-    private void ReassertBottom(string reason)
+    /// <summary>
+    /// owner 模式下本窗口应紧贴 owner 之上：owner 在底部时本窗口也在普通窗口之下；Win+D 把 owner 提到最上时本窗口跟着上去。
+    /// 返回 SetWindowPos 的 hwndInsertAfter（Zero 即 HWND_TOP，owner 已在最上）；已就位返回 null。
+    /// 不能用 HWND_BOTTOM：对 owned 窗口置底会把 owner 一起拖到最底，Win+D 就盖不住无法最小化的全屏窗口。
+    /// </summary>
+    private IntPtr? InsertAfterForOwner()
+    {
+        var owner = _desktop.DefViewParent;
+        var pid = (uint)Environment.ProcessId;
+        // 本窗口与 owner 之间只有本进程的窗口（另一个宿主、输入法窗口等）视为已就位，避免两个宿主来回互换
+        for (var h = Win32.GetWindow(_hwnd, Win32.GW_HWNDNEXT); h != IntPtr.Zero; h = Win32.GetWindow(h, Win32.GW_HWNDNEXT))
+        {
+            if (h == owner) return null;
+            Win32.GetWindowThreadProcessId(h, out uint p);
+            if (p != pid) break;
+        }
+        return Win32.GetWindow(owner, Win32.GW_HWNDPREV);
+    }
+
+    private void ReassertAboveOwner(string reason)
     {
         if (_hwnd == IntPtr.Zero || !Win32.IsWindow(_hwnd)) return;
-        Win32.SetWindowPos(_hwnd, Win32.HWND_BOTTOM, 0, 0, 0, 0, Win32.SWP_NOACTIVATE | Win32.SWP_NOMOVE | Win32.SWP_NOSIZE);
-        Log.Info($"[{_monitor.DeviceName}] Z 序修正：{reason}");
+        var after = InsertAfterForOwner();
+        if (after is not { } insertAfter) return;
+        Win32.SetWindowPos(_hwnd, insertAfter, 0, 0, 0, 0, Win32.SWP_NOACTIVATE | Win32.SWP_NOMOVE | Win32.SWP_NOSIZE);
+        Log.Info($"[{_monitor.DeviceName}] Z 序修正：{reason}，紧贴 owner 之上（插在 0x{insertAfter:X} 之后）");
     }
 
     private void OnForegroundChanged(IntPtr hook, uint evt, IntPtr hwnd, int idObject, int idChild, uint thread, uint time)
@@ -165,7 +186,7 @@ public partial class DesktopHostWindow : Window
         try
         {
             if (!DesktopShell.IsDesktopWindow(hwnd)) return;
-            ReassertBottom($"前台变为桌面窗口 0x{hwnd:X}");
+            ReassertAboveOwner($"前台变为桌面窗口 0x{hwnd:X}");
             // Explorer 可能在事件之后才调整 Z 序，延迟再复查一次
             _zTimer.Stop();
             _zTimer.Start();
@@ -185,16 +206,21 @@ public partial class DesktopHostWindow : Window
             return menuResult;
         }
 
-        // owner 模式：有人想把本窗口提到上层时，强制改为 HWND_BOTTOM 插入（仅改结构体，不再调 SetWindowPos，无递归）
+        // owner 模式：本线程发起的 Z 序变化（点击后 SetForegroundWindow 激活、WPF 显示窗口）改为紧贴 owner 之上，不越过普通窗口；
+        // 跨线程发来的是 Explorer 移动 owner 时连带移动本窗口（如 Win+D 把桌面提到最上），必须放行，否则 owner 被一起按住提不上去。
+        // 只改结构体，不再调 SetWindowPos，无递归
         if (msg == Win32.WM_WINDOWPOSCHANGING && _attach == AttachMode.Owner)
         {
             var wp = Marshal.PtrToStructure<Win32.WINDOWPOS>(lParam);
-            if ((wp.flags & Win32.SWP_NOZORDER) == 0 && wp.hwndInsertAfter != Win32.HWND_BOTTOM)
+            if ((wp.flags & Win32.SWP_NOZORDER) == 0 && !Win32.InSendMessage())
             {
-                wp.hwndInsertAfter = Win32.HWND_BOTTOM;
+                var after = InsertAfterForOwner();
+                if (after is not { } insertAfter) wp.flags |= Win32.SWP_NOZORDER;
+                else if (wp.hwndInsertAfter != insertAfter) wp.hwndInsertAfter = insertAfter;
+                else return IntPtr.Zero;
                 Marshal.StructureToPtr(wp, lParam, false);
                 if (++_zFixLogCount <= 20)
-                    Log.Info($"[{_monitor.DeviceName}] Z 序修正：WM_WINDOWPOSCHANGING 强制 HWND_BOTTOM（第 {_zFixLogCount} 次）");
+                    Log.Info($"[{_monitor.DeviceName}] Z 序修正：WM_WINDOWPOSCHANGING 改为紧贴 owner 之上（第 {_zFixLogCount} 次）");
             }
         }
         return IntPtr.Zero;

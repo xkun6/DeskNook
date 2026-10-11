@@ -44,6 +44,10 @@ internal static partial class Win32
     public const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
     public const uint WINEVENT_OUTOFCONTEXT = 0x0000;
 
+    // GetWindow
+    public const uint GW_HWNDNEXT = 2;
+    public const uint GW_HWNDPREV = 3;
+
     public const uint GA_ROOT = 2;
     public const uint MONITORINFOF_PRIMARY = 1;
 
@@ -130,6 +134,13 @@ internal static partial class Win32
 
     [DllImport("user32.dll")]
     public static extern IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool InSendMessage();
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
