@@ -111,5 +111,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/test/test-menu-v2.ps1 
 - **开机自启实际登录行为**、注销/关机时系统图标恢复、睡眠唤醒、锁屏后恢复。
 - **旧名迁移清理**：从 XkDesk/DeskNext 遗留的注册项升级到 DeskNook。
 - **本地化**：`OnNativeInvoked` 与代理里的标题匹配只认中文/英文（“排序方式/Sort by”“查看/View”“显示桌面图标/Show desktop icons”等），其他语言系统上排序/查看同步和“显示桌面图标”拦截不会生效。
-- **全屏应用/游戏**、触摸与高 DPI 触控板下的拖动、右键拖放菜单（Shell 的 `IDropTarget` 自己弹）。
+- **全屏应用/游戏**（无边框全屏游戏在前台时 Win+D 能回到桌面、再按 Win+D 游戏回来；点击桌面图标后宿主不盖住普通窗口）、触摸与高 DPI 触控板下的拖动、右键拖放菜单（Shell 的 `IDropTarget` 自己弹）。
 - **性能**：4K 屏上 `dwm` 与 `layered` 的 CPU 对比（阶段 0 的实测依据）；大量图标（数百项）下的重建耗时。

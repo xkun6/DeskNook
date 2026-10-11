@@ -56,8 +56,8 @@ WorkerW                          <- 其他情形：DefView 挂在某个含它的
 
 | | owner（默认） | child |
 |---|---|---|
-| 做法 | `SetWindowLongPtr(GWLP_HWNDPARENT, DefViewParent)`：把承载 DefView 的顶层窗口设为 owner，再 `HWND_BOTTOM` | `SetParent(host, DefViewParent)` + 去掉 `WS_POPUP/CAPTION/THICKFRAME` 加 `WS_CHILD`，`HWND_TOP`（位于 DefView 之上） |
-| 层级 | owned 窗口始终在 owner 之上；owner 是桌面层窗口，所以宿主窗口紧贴桌面层、在普通窗口之下 | 成为桌面窗口的子窗口，坐标相对父窗口（需 `ScreenToClient` 换算，虚拟屏幕原点可能为负） |
+| 做法 | `SetWindowLongPtr(GWLP_HWNDPARENT, DefViewParent)`：把承载 DefView 的顶层窗口设为 owner，再放到 owner 正上方 | `SetParent(host, DefViewParent)` + 去掉 `WS_POPUP/CAPTION/THICKFRAME` 加 `WS_CHILD`，`HWND_TOP`（位于 DefView 之上） |
+| 层级 | owned 窗口始终在 owner 之上；owner 是桌面层窗口，所以宿主窗口紧贴桌面层、在普通窗口之下；Win+D 把 owner 提到最上时宿主跟着上去 | 成为桌面窗口的子窗口，坐标相对父窗口（需 `ScreenToClient` 换算，虚拟屏幕原点可能为负） |
 | 风险 | Z 序可能被 Explorer 改动 → 需要维护（见下） | 对 Explorer 窗口结构依赖更强，Win11 24H2 上更脆弱 |
 
 选定 owner 的依据是阶段 0 的实测（`App.xaml.cs` 注释“阶段 0 实测选定 owner + dwm”）；`--attach=child` 仅作对照/备用。
@@ -73,12 +73,18 @@ WorkerW                          <- 其他情形：DefView 挂在某个含它的
 
 ## Z 序维护
 
-owner 模式下，宿主窗口应一直在“最底部”（仅高于桌面层）。会把它顶上去的场景：Win+D、点击桌面使 Progman/WorkerW 成为前台、Explorer 重排窗口。两层防线：
+owner 模式下，宿主窗口应**紧贴 owner 之上**，owner 在哪宿主就在哪：平时 owner 在最底，宿主就在普通窗口之下；Win+D（显示桌面）时 Explorer 把 owner 提到最上，盖住无法最小化的窗口（如没有 `WS_MINIMIZEBOX` 的无边框全屏游戏），宿主也要跟着上去。目标位置由 `DesktopHostWindow.InsertAfterForOwner` 计算：从本窗口往下到 owner 之间只有本进程窗口（另一个宿主、输入法窗口等）就算已就位，否则插在 `GetWindow(owner, GW_HWNDPREV)` 之后（为 0 即 owner 已在最上，用 `HWND_TOP`）。
 
-1. **WinEventHook**：`SetWinEventHook(EVENT_SYSTEM_FOREGROUND, WINEVENT_OUTOFCONTEXT)`；回调 `OnForegroundChanged` 里用 `DesktopShell.IsDesktopWindow(hwnd)`（是 Progman，或含 DefView 的 WorkerW）判断，是则立刻 `ReassertBottom`（`SetWindowPos(HWND_BOTTOM, NOACTIVATE|NOMOVE|NOSIZE)`），并启动 150ms 的 `_zTimer` 延迟复查一次（Explorer 可能在事件之后才调整 Z 序）。委托保存在字段 `_winEventProc`，防止被 GC 回收导致回调崩溃。
-2. **`WM_WINDOWPOSCHANGING`**：宿主窗口的 `WndProc` 里，若有人要改 Z 序（没有 `SWP_NOZORDER`）且 `hwndInsertAfter != HWND_BOTTOM`，直接把结构体里的 `hwndInsertAfter` 改写为 `HWND_BOTTOM`——只改结构体，不再调 `SetWindowPos`，所以没有递归。日志里每个宿主最多记 20 次（`_zFixLogCount`）。
+**不能对宿主用 `HWND_BOTTOM`**（2026-10 实测，离屏 owner/owned 测试窗口）：对 owned 窗口 `SetWindowPos(HWND_BOTTOM)` 会把 owner 一起拖到最底；owned 窗口在 `WM_WINDOWPOSCHANGING` 里把 Z 序改写为 `HWND_BOTTOM`，owner 自己就提不上去。旧实现两者都做了，结果 Win+D 提起的桌面窗口被按回底部，全屏游戏下回不到桌面；普通窗口会被 Win+D 最小化，所以平时看不出来。
 
-child 模式没有这两层（不需要 `HWND_BOTTOM`）。
+两层防线：
+
+1. **`WM_WINDOWPOSCHANGING`**：宿主窗口的 `WndProc` 里，有人要改 Z 序（没有 `SWP_NOZORDER`）时按发起方区分：
+   - `InSendMessage()` 为真（跨线程发来）：是 Explorer 移动 owner 时连带移动 owned 窗口（Win+D 提起/放下桌面），**放行**，宿主随 owner 一起移动（实测）；
+   - 本线程发起（点击后 `SetForegroundWindow` 激活、WPF 显示窗口；后台线程的 `SetForegroundWindow` 也是在窗口线程里完成激活）：把 `hwndInsertAfter` 改写为 `InsertAfterForOwner` 的结果，已就位则加 `SWP_NOZORDER`。只改结构体、不调 `SetWindowPos`，没有递归；日志每个宿主最多记 20 次（`_zFixLogCount`）。
+2. **WinEventHook**：`SetWinEventHook(EVENT_SYSTEM_FOREGROUND, WINEVENT_OUTOFCONTEXT)`；回调 `OnForegroundChanged` 里用 `DesktopShell.IsDesktopWindow(hwnd)`（是 Progman，或含 DefView 的 WorkerW）判断，是则 `ReassertAboveOwner`（不在位才 `SetWindowPos` 到 owner 正上方），并启动 150ms 的 `_zTimer` 延迟复查一次（Explorer 可能在事件之后才调整 Z 序）。这是兜底，正常情况下宿主已随 owner 就位、不产生日志。委托保存在字段 `_winEventProc`，防止被 GC 回收导致回调崩溃。
+
+挂载时 `AttachAsOwner` 同样用 `ReassertAboveOwner` 定位。child 模式没有这两层。
 
 ## 键盘焦点
 

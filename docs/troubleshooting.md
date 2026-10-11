@@ -73,7 +73,12 @@ DeskNook 通过 `ShowWindow(SW_HIDE)` 隐藏系统 `SysListView32`，而不是�
 **桌面层**
 
 - 隐藏系统图标要用 `ShowWindow(SW_HIDE)`，不能改注册表（`HideIcons`）：Explorer 重启后窗口重建，用注册表会留下副作用且难恢复。
-- 宿主窗口必须 owner 挂载到 `DefViewParent`、`HWND_BOTTOM`，并用 `WinEventHook(EVENT_SYSTEM_FOREGROUND)` + `WM_WINDOWPOSCHANGING` 保持 Z 序；Win+D 与 Explorer 重启后要重挂。
+- 宿主窗口必须 owner 挂载到 `DefViewParent`、紧贴 owner 之上，并用 `WM_WINDOWPOSCHANGING` + `WinEventHook(EVENT_SYSTEM_FOREGROUND)` 保持 Z 序；Explorer 重启后要重挂。
+- 无边框全屏游戏下 Win+D 回不到桌面：
+  - 现象：游戏（如 Unity 的 `UnityWndClass`，样式只有 `WS_POPUP`、没有 `WS_MINIMIZEBOX`）在前台时按 Win+D 没反应；普通窗口下 Win+D 正常。
+  - 根因：Win+D 对不能最小化的窗口是把桌面窗口（宿主的 owner）提到最上来盖住它；旧实现在 `WM_WINDOWPOSCHANGING` 里把宿主强制改成 `HWND_BOTTOM`，并在桌面成为前台时 `SetWindowPos(HWND_BOTTOM)`，两者都会把 owner 一起按回最底（离屏 owner/owned 窗口实测）。
+  - 修复位置：`DesktopHostWindow.WndProc` 放行跨线程（`InSendMessage()`）的 Z 序变化，本线程的改为紧贴 owner 之上（`InsertAfterForOwner`/`ReassertAboveOwner`）。详见 [desktop-layer.md](desktop-layer.md#z-序维护)。
+  - 排查：Win+D 后用 `EnumWindows` 看 Z 序，owner（日志 `owner=0x…(WorkerW)`）应在游戏窗口之上、宿主紧贴其上。对宿主窗口不要再用 `HWND_BOTTOM`。
 - 透明用 DWM 方案，不用 `0x052C` 消息（见 [desktop-layer.md](desktop-layer.md)）。
 - PerMonitorV2 DPI：像素 ↔ DIP 转换按各显示器 `Scale`，不要用全局缩放；副屏在左/上时坐标为负。
 
