@@ -94,6 +94,11 @@ DeskNook 通过 `ShowWindow(SW_HIDE)` 隐藏系统 `SysListView32`，而不是�
   - 根因：撤销产生的通知几乎必带快速访问 `::{679F85CB-…}` 的 UPDATEDIR/UPDATEIMAGE，命中 `NeedsShownCacheReset`；旧实现据此清空 `_shownCache`，在 **UI 线程**同步跨进程问 Explorer（`SystemDesktopView.IsShown`），而 Explorer 桌面线程正忙于撤销，一次询问就阻塞数秒。
   - 修复位置：`DesktopItemSource` 改为后台复核（`RequestRecheck/RecheckWorker/OnRecheckDone/MergeShown`），首次枚举之外 UI 线程不再询问 Explorer。
   - 排查日志：不应再出现 UI 线程的 `询问系统桌面视图耗时`（仅启动首次枚举可能出现）；`后台复核系统桌面视图耗时 X ms（N 项，变化 M 项）` 出现说明 Explorer 忙，但 UI 应仍流畅；若仍卡顿，看是否有新路径在 UI 线程调用 `SystemDesktopView`。
+- 桌面右键“刷新”很慢，刷新后再右键要等几秒菜单才出来：
+  - 现象：日志 `代理已执行：动词=refresh … DefView=True` 之后约 3 秒没有任何 UI 线程日志，随后 `后台复核系统桌面视图耗时 3299 ms`、批量 `图标加载耗时 27xx ms`，下一次菜单请求也在这时才到代理。
+  - 根因：原生刷新在 Explorer 桌面线程上刷新隐藏的系统 ListView，约 255 项时忙约 3.3 秒；再右键时 `DesktopSurface.BringToForeground` 同步 `SetForegroundWindow`（前台是忙着的代理窗口）阻塞 UI 线程，菜单也要在同一线程上弹。
+  - 修复位置：`ExplorerMenuProxy.TryShow` 在桌面/格子空白处菜单拦截 `refresh`，`OnEvent` 改调 `DesktopController.Refresh()`，不再执行原生刷新（见 [menu.md](menu.md#动词拦截)）。
+  - 排查日志：桌面空白处选“刷新”应记 `代理拦截动词：refresh`，不应再出现 `代理已执行：动词=refresh`。
 - 在资源管理器里撤销/还原文件时 Explorer 卡数秒（Explorer 未响应）：
   - 这是 Windows 自身行为，与 DeskNook 无关：Shell 撤销与回收站“还原”会让 Explorer 桌面线程为每个文件在系统 ListView 里找空位（`comctl32!CLVSlotsManager::FindFreeSlot`），图标越多每项越慢（约 260 图标时每项约 2 秒）。
   - 诊断：用户态挂起（或采样）Explorer 的桌面线程，栈顶落在 `CLVSlotsManager::FindFreeSlot` 即是。

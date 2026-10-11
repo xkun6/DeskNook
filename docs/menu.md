@@ -255,7 +255,7 @@ DeskNook 没运行时桌面是系统原生的，右键由 Explorer 自己弹；�
 
 ## 动词拦截
 
-DeskNook 拿不到的“交给 DeskNook 自己做”的动作，分三类：
+DeskNook 拿不到的“交给 DeskNook 自己做”的动作，分四类：
 
 1. **按标题拦截“显示桌面图标”**（`proxy.cpp:IsShowDesktopIcons`，匹配“显示桌面图标”/“Show desktop icons”）：不执行，发 `verb{showdesktopicons}`，DeskNook `SetIconsVisible(!IconsVisible)`。同时 `FixIconsItem` 在菜单弹出前和每个子菜单 `WM_INITMENUPOPUP` 时把该项的勾选改成 DeskNook 的真实状态（系统 ListView 永远是隐藏的，原生勾选不反映 DeskNook）。
 2. **按动词名拦截**：请求里的 `interceptVerbs`（= `MenuExtensions.VerbInterceptors.Keys`），用 `GetCommandString(GCS_VERBW)` 取动词名后不区分大小写比较。命中则发 `verb{<动词>}` 且**不再 `InvokeCommand`**，DeskNook 在 `ExplorerMenuProxy.OnEvent` 里 `VerbInterceptors[动词](ctx)`。当前只有 `rename`（没有真实 DefView 宿主，系统重命名在 DeskNook 画布上不生效，改为 DeskNook 原位重命名）。
@@ -263,6 +263,7 @@ DeskNook 拿不到的“交给 DeskNook 自己做”的动作，分三类：
    - 含 `Handler`/`Command` 的 ShellNew（快捷方式 `.lnk`、库 `.library-ms` 等）不在 `InterceptVerbs()` 里，仍交给 Explorer 执行；`FileName` 找不到模板的扩展名同样不拦截（判定见 `ShellNewItems.Classify`）。
    - 代理路径下被拦截的新建若失败（`CreateNewItem` 返回 false）**无法回退给 Explorer**：代理已吞掉命令，只记日志“新建失败”。
    - 回退路径 `ShellContextMenu.Show` 里同样先自己创建（`IsInNewSubmenu` 且动词在 `InterceptVerbs()` 内），失败才继续 `Invoke` 给 Shell。
+4. **“刷新”**（同样仅 `ctx.InDeskNook && ctx.IsBackground`）：`ExplorerMenuProxy.TryShow` 把 `RefreshVerb`（`refresh`）追加进 `interceptVerbs`，`OnEvent` 收到 `verb{refresh}` 调 `DesktopController.Refresh()`。原因：原生刷新作用在隐藏的系统 ListView 上，桌面约 255 项时 Explorer 桌面线程忙约 3.3 秒（日志“后台复核系统桌面视图耗时 3299 ms”）；期间再右键，DeskNook 同步 `SetForegroundWindow`（前台是忙着的代理窗口）阻塞 UI 线程，菜单也要在同一线程上弹，要等刷完才出来。DeskNook 的刷新不依赖这个隐藏视图，DefView 自己也监听文件变化，所以不需要原生刷新。
 
 注意两条路径的语义差别（容易踩坑）：
 
@@ -274,7 +275,7 @@ DeskNook 拿不到的“交给 DeskNook 自己做”的动作，分三类：
 - 仅对桌面背景菜单请求生效（`ExplorerMenuProxy.OnNativeInvoked` 用 `ev.Req` 查 `_pending` 里的 `MenuContext.IsDesktopBackground`）；格子/映射目录菜单不触发（原因：格子自定义项“排序方式/查看”与原生项同在一个菜单里，标题会撞上；回退路径 `ShellContextMenu.Show` 没有这类按标题同步，无需处理）；
 - 父菜单为“排序方式/Sort by”：按标题映射 `name/size/type/date` → `SortBy`；
 - 父菜单为“查看/View”：250ms 后 `SyncFromSystemView()` 重读系统视图的图标大小与间距（DefView 在自己线程里应用）；
-- 动词 `refresh` 或标题“刷新/Refresh”：`DesktopController.Refresh()`。
+- 动词 `refresh` 或标题“刷新/Refresh”：`DesktopController.Refresh()`（桌面空白处的 `refresh` 已被拦截，见上；这里只兜底动词不同但标题是“刷新”的情况）。
 - 粘贴类（动词 `paste/pastelink` 或标题以“粘贴”开头）在 `pick` 阶段 `ArmUndo`，撤消由 `DesktopController.Undo` 发 `WM_COMMAND 0x701B` 给系统 DefView。
 
 ## 深色模式与菜单图标
