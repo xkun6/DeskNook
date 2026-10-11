@@ -26,6 +26,8 @@ internal sealed class ExplorerMenuProxy
     /// <summary>扩展查询不带 req 时，最多认领多久以内发起的请求。</summary>
     internal static readonly TimeSpan UntaggedWindow = TimeSpan.FromSeconds(5);
 
+    private const string RefreshVerb = "refresh";
+
     private readonly Dispatcher _dispatcher;
     private readonly DesktopController _c;
     private readonly IntPtr _sender;
@@ -242,10 +244,14 @@ internal sealed class ExplorerMenuProxy
 
         req.Id = $"r{Interlocked.Increment(ref _seq)}";
         req.InterceptVerbs = MenuExtensions.VerbInterceptors.Keys.ToList();
-        // 桌面/格子空白处：新建子菜单的文件夹与文件由 DeskNook 自己创建（见 ShellNewItems）
+        // 桌面/格子空白处：新建子菜单的文件夹与文件由 DeskNook 自己创建（见 ShellNewItems）；
+        // “刷新”只刷新 DeskNook：原生刷新作用在隐藏的系统 ListView 上，Explorer 桌面线程会忙数秒，期间再右键菜单弹不出来
         if (ctx.InDeskNook && ctx.IsBackground)
+        {
             foreach (var v in ShellNewItems.InterceptVerbs())
                 if (!req.InterceptVerbs.Contains(v, StringComparer.OrdinalIgnoreCase)) req.InterceptVerbs.Add(v);
+            if (!req.InterceptVerbs.Contains(RefreshVerb, StringComparer.OrdinalIgnoreCase)) req.InterceptVerbs.Add(RefreshVerb);
+        }
         req.IconsVisible = _c.IconsVisible;
         Purge();
         _pending[req.Id] = new Pending(ctx, DateTime.UtcNow, req.Kind);
@@ -352,6 +358,7 @@ internal sealed class ExplorerMenuProxy
                     if (!_c.CreateNewItem(ctx, ev.Verb, pending.PickTitle, pending.PickParent))
                         Log.Error($"新建失败：动词={ev.Verb} 标题={pending.PickTitle}（代理已吞掉该命令，无法回退给 Explorer）");
                 }
+                else if (string.Equals(ev.Verb, RefreshVerb, StringComparison.OrdinalIgnoreCase)) _c.Refresh();
                 else if (ctx != null && MenuExtensions.VerbInterceptors.TryGetValue(ev.Verb, out var intercept))
                 {
                     ctx.Verb = ev.Verb;
@@ -396,7 +403,7 @@ internal sealed class ExplorerMenuProxy
             }, _dispatcher);
             t.Start();
         }
-        else if (ev.Verb == "refresh" || ev.Title is "刷新" or "Refresh")
+        else if (ev.Verb == RefreshVerb || ev.Title is "刷新" or "Refresh")
         {
             _c.Refresh();
         }
