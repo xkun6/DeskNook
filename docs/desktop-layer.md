@@ -73,7 +73,7 @@ WorkerW                          <- 其他情形：DefView 挂在某个含它的
 
 ## Z 序维护
 
-owner 模式下，宿主窗口应**紧贴 owner 之上**，owner 在哪宿主就在哪：平时 owner 在最底，宿主就在普通窗口之下；Win+D（显示桌面）时 Explorer 把 owner 提到最上，盖住无法最小化的窗口（如没有 `WS_MINIMIZEBOX` 的无边框全屏游戏），宿主也要跟着上去。目标位置由 `DesktopHostWindow.InsertAfterForOwner` 计算：从本窗口往下到 owner 之间只有本进程窗口（另一个宿主、输入法窗口等）就算已就位，否则插在 `GetWindow(owner, GW_HWNDPREV)` 之后（为 0 即 owner 已在最上，用 `HWND_TOP`）。
+owner 模式下，宿主窗口应**紧贴 owner 之上**，owner 在哪宿主就在哪：平时 owner 在最底，宿主就在普通窗口之下；Win+D（显示桌面）时 Explorer 把 owner 提到最上，盖住无法最小化的窗口（如没有 `WS_MINIMIZEBOX` 的无边框全屏游戏），宿主也要跟着上去。目标位置由 `DesktopHostWindow.InsertAfterForOwner` 计算：从本窗口往下到 owner 之间只有本进程窗口（另一个宿主、输入法窗口等）就算已就位，否则插在 `GetWindow(owner, GW_HWNDPREV)` 之后（为 0 即 owner 已在最上，用 `HWND_TOP`）。**锚点不能是置顶窗口**：Win+D 后 owner 在普通窗口带最上面，它正上方是置顶带的最后一个窗口（实测为任务栏的 `tooltips_class32`），实测把非置顶窗口插在置顶窗口之后它会变成 `WS_EX_TOPMOST`；所以锚点置顶时改用 `HWND_TOP`（`DesktopHostWindow.IsTopmost`）。`ReassertAboveOwner` 发现宿主已置顶会先 `HWND_NOTOPMOST`（日志“宿主意外置顶，已取消置顶”）。
 
 **不能对宿主用 `HWND_BOTTOM`**（2026-10 实测，离屏 owner/owned 测试窗口）：对 owned 窗口 `SetWindowPos(HWND_BOTTOM)` 会把 owner 一起拖到最底；owned 窗口在 `WM_WINDOWPOSCHANGING` 里把 Z 序改写为 `HWND_BOTTOM`，owner 自己就提不上去。旧实现两者都做了，结果 Win+D 提起的桌面窗口被按回底部，全屏游戏下回不到桌面；普通窗口会被 Win+D 最小化，所以平时看不出来。
 
@@ -81,7 +81,7 @@ owner 模式下，宿主窗口应**紧贴 owner 之上**，owner 在哪宿主就
 
 1. **`WM_WINDOWPOSCHANGING`**：宿主窗口的 `WndProc` 里，有人要改 Z 序（没有 `SWP_NOZORDER`）时按发起方区分：
    - `InSendMessage()` 为真（跨线程发来）：是 Explorer 移动 owner 时连带移动 owned 窗口（Win+D 提起/放下桌面），**放行**，宿主随 owner 一起移动（实测）；
-   - 本线程发起（点击后 `SetForegroundWindow` 激活、WPF 显示窗口；后台线程的 `SetForegroundWindow` 也是在窗口线程里完成激活）：把 `hwndInsertAfter` 改写为 `InsertAfterForOwner` 的结果，已就位则加 `SWP_NOZORDER`。只改结构体、不调 `SetWindowPos`，没有递归；日志每个宿主最多记 20 次（`_zFixLogCount`）。
+   - 本线程发起（点击后 `SetForegroundWindow` 激活、WPF 显示窗口；后台线程的 `SetForegroundWindow` 也是在窗口线程里完成激活）：把 `hwndInsertAfter` 改写为 `InsertAfterForOwner` 的结果，已就位则加 `SWP_NOZORDER`。例外：`HWND_NOTOPMOST` 放行，否则 `ReassertAboveOwner` 取消意外置顶会被改写掉而不生效。只改结构体、不调 `SetWindowPos`，没有递归；日志每个宿主最多记 20 次（`_zFixLogCount`）。
 2. **WinEventHook**：`SetWinEventHook(EVENT_SYSTEM_FOREGROUND, WINEVENT_OUTOFCONTEXT)`；回调 `OnForegroundChanged` 里用 `DesktopShell.IsDesktopWindow(hwnd)`（是 Progman，或含 DefView 的 WorkerW）判断，是则 `ReassertAboveOwner`（不在位才 `SetWindowPos` 到 owner 正上方），并启动 150ms 的 `_zTimer` 延迟复查一次（Explorer 可能在事件之后才调整 Z 序）。这是兜底，正常情况下宿主已随 owner 就位、不产生日志。委托保存在字段 `_winEventProc`，防止被 GC 回收导致回调崩溃。
 
 挂载时 `AttachAsOwner` 同样用 `ReassertAboveOwner` 定位。child 模式没有这两层。

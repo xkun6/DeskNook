@@ -79,6 +79,15 @@ DeskNook 通过 `ShowWindow(SW_HIDE)` 隐藏系统 `SysListView32`，而不是�
   - 根因：Win+D 对不能最小化的窗口是把桌面窗口（宿主的 owner）提到最上来盖住它；旧实现在 `WM_WINDOWPOSCHANGING` 里把宿主强制改成 `HWND_BOTTOM`，并在桌面成为前台时 `SetWindowPos(HWND_BOTTOM)`，两者都会把 owner 一起按回最底（离屏 owner/owned 窗口实测）。
   - 修复位置：`DesktopHostWindow.WndProc` 放行跨线程（`InSendMessage()`）的 Z 序变化，本线程的改为紧贴 owner 之上（`InsertAfterForOwner`/`ReassertAboveOwner`）。详见 [desktop-layer.md](desktop-layer.md#z-序维护)。
   - 排查：Win+D 后用 `EnumWindows` 看 Z 序，owner（日志 `owner=0x…(WorkerW)`）应在游戏窗口之上、宿主紧贴其上。对宿主窗口不要再用 `HWND_BOTTOM`。
+- Win+D 后单击桌面被当成双击，每点一下都切换“隐藏/显示图标”（看起来像整屏只剩壁纸）：
+  - 现象：日志里一次单击后约 120ms 内宿主被激活两次（两组 `WM_WINDOWPOSCHANGING 改为紧贴 owner 之上`），随即 `DeskNook 图标显示状态：隐藏`。
+  - 根因（推断，未抓到消息序列）：点击时 `BringToForeground` 抢前台，Explorer 退出显示桌面引起前台来回切换，WPF 窗口重新激活时按按钮状态又合成一次左键按下，`ClickCount` 算成 2；两次按下之间没有真正的抬起。
+  - 修复位置：`DesktopSurface.IsRealDoubleClick`：双击须 `ClickCount==2`、两次按下之间观察到左键抬起（`OnPreviewMouseLeftButtonUp`）且抬起距今不超过 `GetDoubleClickTime()`；空白处切换显隐与图标双击打开都用它。
+  - 排查日志：`忽略疑似重复按下：ClickCount=2，上次按下后未抬起…` 出现说明拦下了一次误判。
+- Win+D 后宿主窗口意外置顶：
+  - 根因：Z 序修复后，宿主“插在 owner 正上方那个窗口之后”；Win+D 时 owner 在普通窗口带最上面，正上方是任务栏的置顶提示窗口（`tooltips_class32`，`WS_EX_TOPMOST`），插在它之后宿主自己变成置顶（实测），层级关系脱离 owner，结果取决于 Win+D、点击、150ms 复查的先后，所以是概率触发。日志特征：Win+D 后出现“紧贴 owner 之上（插在 0x… 之后）”，该句柄是任务栏的提示窗口。
+  - 修复位置：`DesktopHostWindow.InsertAfterForOwner` 锚点置顶时改用 `HWND_TOP`；`ReassertAboveOwner` 发现宿主已置顶先 `HWND_NOTOPMOST`。
+  - 表现：宿主盖在任务栏等置顶窗口之上（宿主覆盖整块显示器、背景 alpha=1，看起来透明但会挡住点击）。没有抓到用户现场的置顶快照，影响是按实测机制推断的。
 - 透明用 DWM 方案，不用 `0x052C` 消息（见 [desktop-layer.md](desktop-layer.md)）。
 - PerMonitorV2 DPI：像素 ↔ DIP 转换按各显示器 `Scale`，不要用全局缩放；副屏在左/上时坐标为负。
 

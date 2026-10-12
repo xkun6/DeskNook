@@ -72,7 +72,7 @@
 
 ## 双击隐藏 / 显示
 
-- 触发：`DesktopSurface` 自由区空白处（不在格子内）双击，且 `Settings.DoubleClickToggle`；托盘图标左键单击；托盘菜单“隐藏/显示桌面图标”；右键菜单的“显示桌面图标”（动词拦截，见 [menu.md](menu.md)）。
+- 触发：`DesktopSurface` 自由区空白处（不在格子内）双击，且 `Settings.DoubleClickToggle`（双击由 `DesktopSurface.IsRealDoubleClick` 判定，要求两次按下之间确有左键抬起，防止 Win+D 后单击被误判，见 [troubleshooting.md](troubleshooting.md)）；托盘图标左键单击；托盘菜单“隐藏/显示桌面图标”；右键菜单的“显示桌面图标”（动词拦截，见 [menu.md](menu.md)）。
 - 实现：`DesktopController.SetIconsVisible(bool)` 改 `IconsVisible`，并写 `Layout.View.IconsHidden`（保存，所以重启后保持）；`IconsVisibleChanged` → 每个 `DesktopSurface.ApplyIconsVisible(animate)`：200ms 不透明度淡入/淡出，淡出结束后把图标与格子 `Visibility=Hidden`（用 `_fadeVersion` 防止中途再次切换时的竞态）；隐藏时清除选择。
 - 隐藏时画布本身仍存在且可命中：右键仍弹桌面背景菜单，再次双击恢复。**系统 ListView 始终保持隐藏**（这里的“隐藏”只针对 DeskNook 自己画的内容）。
 
