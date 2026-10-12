@@ -35,6 +35,9 @@ internal sealed class DesktopSurface : Canvas
     private Point _bandStart;
     private HashSet<string> _bandBase = new();
     private BoxControl? _bandBox;
+    // 真双击判定：两次按下之间必须观察到左键抬起（Win+D 后前台来回切换时 WPF 会合成重复的按下，ClickCount 误为 2）
+    private bool _leftUpSincePress = true;
+    private long _lastLeftUpTick;
 
     // 重命名
     private TextBox? _renameBox;
@@ -474,6 +477,7 @@ internal sealed class DesktopSurface : Canvas
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonDown(e);
+        var isDouble = IsRealDoubleClick(e);
         BringToForeground();
         if (_renameBox != null) { Focus(); return; }
 
@@ -485,7 +489,7 @@ internal sealed class DesktopSurface : Canvas
         if (ctl != null)
         {
             var key = ctl.Item.Key;
-            if (e.ClickCount == 2)
+            if (isDouble)
             {
                 _pressKey = null;
                 _c.SelectOnly(key);
@@ -507,7 +511,7 @@ internal sealed class DesktopSurface : Canvas
         }
 
         // 自由区空白处双击：隐藏/显示全部图标与格子（格子内的空白不算）
-        if (e.ClickCount == 2 && BoxAtSource(e.OriginalSource as DependencyObject) == null && _c.Settings.DoubleClickToggle)
+        if (isDouble && BoxAtSource(e.OriginalSource as DependencyObject) == null && _c.Settings.DoubleClickToggle)
         {
             _pressKey = null;
             _banding = false;
@@ -528,6 +532,24 @@ internal sealed class DesktopSurface : Canvas
         if (!ctrl) _c.ClearSelection();
         CaptureMouse();
         e.Handled = true;
+    }
+
+    /// <summary>本次左键按下是否为真双击：WPF ClickCount==2，且上次按下后观察到过抬起、抬起距今不超过系统双击时间。调用后重置抬起标记。</summary>
+    private bool IsRealDoubleClick(MouseButtonEventArgs e)
+    {
+        var real = e.ClickCount == 2 && _leftUpSincePress
+                   && Environment.TickCount64 - _lastLeftUpTick <= Win32.GetDoubleClickTime();
+        if (e.ClickCount == 2 && !real)
+            Log.Info($"忽略疑似重复按下：ClickCount=2，上次按下后{(_leftUpSincePress ? "" : "未")}抬起，距抬起 {Environment.TickCount64 - _lastLeftUpTick} ms");
+        _leftUpSincePress = false;
+        return real;
+    }
+
+    protected override void OnPreviewMouseLeftButtonUp(MouseButtonEventArgs e)
+    {
+        base.OnPreviewMouseLeftButtonUp(e);
+        _leftUpSincePress = true;
+        _lastLeftUpTick = Environment.TickCount64;
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
