@@ -155,7 +155,7 @@ public partial class DesktopHostWindow : Window
 
     /// <summary>
     /// owner 模式下本窗口应紧贴 owner 之上：owner 在底部时本窗口也在普通窗口之下；Win+D 把 owner 提到最上时本窗口跟着上去。
-    /// 返回 SetWindowPos 的 hwndInsertAfter（Zero 即 HWND_TOP，owner 已在最上）；已就位返回 null。
+    /// 返回 SetWindowPos 的 hwndInsertAfter（Zero 即 HWND_TOP，owner 已在最上）；已就位返回 null。不会返回置顶窗口。
     /// 不能用 HWND_BOTTOM：对 owned 窗口置底会把 owner 一起拖到最底，Win+D 就盖不住无法最小化的全屏窗口。
     /// </summary>
     private IntPtr? InsertAfterForOwner()
@@ -169,12 +169,24 @@ public partial class DesktopHostWindow : Window
             Win32.GetWindowThreadProcessId(h, out uint p);
             if (p != pid) break;
         }
-        return Win32.GetWindow(owner, Win32.GW_HWNDPREV);
+        var prev = Win32.GetWindow(owner, Win32.GW_HWNDPREV);
+        // owner 被 Win+D 提到普通窗口最上面时，它上方是置顶窗口（任务栏提示等）；插在置顶窗口之后本窗口会变成置顶，改用 HWND_TOP（普通窗口带最上面，即 owner 正上方）
+        if (prev != IntPtr.Zero && IsTopmost(prev)) return Win32.HWND_TOP;
+        return prev;
     }
+
+    private static bool IsTopmost(IntPtr hwnd) =>
+        (Win32.GetWindowLongPtr(hwnd, Win32.GWL_EXSTYLE).ToInt64() & Win32.WS_EX_TOPMOST) != 0;
 
     private void ReassertAboveOwner(string reason)
     {
         if (_hwnd == IntPtr.Zero || !Win32.IsWindow(_hwnd)) return;
+        // 宿主不应置顶；若已被意外置顶（旧版插在置顶窗口之后），先取消置顶，否则 HWND_TOP 仍留在置顶带
+        if (IsTopmost(_hwnd))
+        {
+            Win32.SetWindowPos(_hwnd, Win32.HWND_NOTOPMOST, 0, 0, 0, 0, Win32.SWP_NOACTIVATE | Win32.SWP_NOMOVE | Win32.SWP_NOSIZE);
+            Log.Info($"[{_monitor.DeviceName}] Z 序修正：{reason}，宿主意外置顶，已取消置顶");
+        }
         var after = InsertAfterForOwner();
         if (after is not { } insertAfter) return;
         Win32.SetWindowPos(_hwnd, insertAfter, 0, 0, 0, 0, Win32.SWP_NOACTIVATE | Win32.SWP_NOMOVE | Win32.SWP_NOSIZE);
@@ -212,7 +224,8 @@ public partial class DesktopHostWindow : Window
         if (msg == Win32.WM_WINDOWPOSCHANGING && _attach == AttachMode.Owner)
         {
             var wp = Marshal.PtrToStructure<Win32.WINDOWPOS>(lParam);
-            if ((wp.flags & Win32.SWP_NOZORDER) == 0 && !Win32.InSendMessage())
+            // HWND_NOTOPMOST 是 ReassertAboveOwner 取消意外置顶，放行，否则被改写后置顶状态不变
+            if ((wp.flags & Win32.SWP_NOZORDER) == 0 && !Win32.InSendMessage() && wp.hwndInsertAfter != Win32.HWND_NOTOPMOST)
             {
                 var after = InsertAfterForOwner();
                 if (after is not { } insertAfter) wp.flags |= Win32.SWP_NOZORDER;

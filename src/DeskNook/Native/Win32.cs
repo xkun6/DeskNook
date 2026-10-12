@@ -25,10 +25,12 @@ internal static partial class Win32
     // 扩展样式
     public const long WS_EX_TOOLWINDOW = 0x00000080L;
     public const long WS_EX_NOACTIVATE = 0x08000000L;
+    public const long WS_EX_TOPMOST = 0x00000008L;
 
     // SetWindowPos
     public static readonly IntPtr HWND_TOP = IntPtr.Zero;
     public static readonly IntPtr HWND_BOTTOM = new(1);
+    public static readonly IntPtr HWND_NOTOPMOST = new(-2);
     public const uint SWP_NOSIZE = 0x0001;
     public const uint SWP_NOMOVE = 0x0002;
     public const uint SWP_NOZORDER = 0x0004;
