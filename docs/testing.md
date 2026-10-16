@@ -18,7 +18,7 @@ dotnet test DeskNook.sln -c Release
 | `AppPathsTests.cs` | 数据根规则：Program Files / Program Files (x86) 下用 `%AppData%\DeskNook`、普通目录用 `data`、前缀相似不误判、路径为空不误判、各文件位置 |
 | `CliArgsTests.cs` | `--autostart=on|off` 解析（大小写、非法值、多个取最后一个、与其他参数混用） |
 | `LogicTests.cs` | `GridLayout`（FirstEmpty/NearestEmpty/FromPixels/FromScreenPixel 含 150% 缩放与负坐标、`MonitorGrid` 行列数）；`LayoutReconciler`（新项放首空格、保留合法位置、7 天保留、改名保位、显示器消失回退主屏、冲突就近安置）；`ItemDiff`（增删改、改名提示命中/不成立）；`LayoutStore`（往返、损坏回退并备份、null 修正、无残留 tmp） |
-| `BoxTests.cs` | 格子布局：key 唯一归属、避开格子覆盖、消失项 7 天、改名同步、显示器缺失暂落主屏、有效矩形夹取/折叠、解散（普通/映射/避开其他格子）、`MoveToBox` 插入与调序语义、排序（名称自然排序/大小/类型/时间/虚拟项在前）、内容排布与插入位置、**移动/缩放逐像素与吸附阈值**、新建选位；`BoxPersistenceTests`：旧 `layout.json` 兼容、完整往返 |
+| `BoxTests.cs` | 格子布局：key 唯一归属、避开格子覆盖、消失项 7 天、改名同步、显示器缺失暂落主屏、有效矩形夹取/折叠、解散（普通/映射/避开其他格子）、`MoveToBox` 插入与调序语义、排序（名称自然排序/大小/类型/时间/虚拟项在前）、内容排布与插入位置、**移动/缩放逐像素与吸附阈值**、新建选位；`BoxPersistenceTests`：旧 `layout.json` 兼容、完整往返；`MonitorHomeTests`：显示器暂时缺失时自由图标/临时格子挡住的图标记 `Home` 并在显示器回来后回位、原位被占放弃回位、`Move` 清 `Home`、旧设备名迁移为稳定 ID（`MigrateMonitorNames`） |
 | `OrganizerTests.cs` | `AutoOrganizer`：各类扩展名归类、文件夹/虚拟项、自定义规则顺序、整理建格子（靠右从上到下再向左不重叠）、复用同名格子、映射格子/映射项不参与、避开已有格子与不整理的自由图标、空计划、**撤销**（恢复布局、整理后又改动只回滚本次、已消失项忽略、记录读写与损坏）；`SettingsStoreTests`：默认规则、往返无残留、损坏备份、规则清理 |
 | `MenuProtocolTests.cs` | `MenuExtensions.BuildWire`：适用条件过滤并分配唯一 Id、动态标题与状态、子菜单只保留适用子项、分隔线与 `FallbackOnly`、资源管理器来源只出现 `InExplorer` 项、位置名映射；协议 JSON 往返、中文不转义、**字段名与 C++ 侧约定一致**（查询/应答/代理请求）、解析容错、非法 JSON 返回 null；`MenuContext.IsFileSystemPath`、`InSameFolder` |
 | `RecycleBinUndoTests.cs` | `RecycleBinUndo`：`ParseInfo` 解析 v1/v2 `$I` 字节、截断与非法长度返回 null；`Match` 取最新、忽略早于 since 的、路径大小写不敏感、`$I`→`$R` 路径（只测纯函数，不碰真实回收站与桌面） |

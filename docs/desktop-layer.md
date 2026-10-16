@@ -97,11 +97,16 @@ owner 模式下，宿主窗口应**紧贴 owner 之上**，owner 在哪宿主就
 ## DPI 与多显示器
 
 - `app.manifest` 声明 `PerMonitorV2`；`DesktopShell.GetMonitors()` 用 `EnumDisplayMonitors` + `GetMonitorInfo` + `GetDpiForMonitor` 得到每个显示器的 `Bounds`（物理像素，虚拟屏幕坐标）、`Work`（工作区）、`Scale`（DPI/96），主显示器排第一（新项优先分配到主屏）。
-- 布局里的坐标一律是**逻辑坐标**：图标是 `(显示器设备名, 列, 行)`，格子矩形是相对工作区左上角的 DIP。`MonitorGrid` 把物理工作区除以 `Scale` 得到 DIP 工作区，再按格子尺寸 `CellW/CellH` 得到列数/行数。
+- 布局里的坐标一律是**逻辑坐标**：图标是 `(显示器稳定 ID, 列, 行)`，格子矩形是相对工作区左上角的 DIP。`MonitorGrid` 把物理工作区除以 `Scale` 得到 DIP 工作区，再按格子尺寸 `CellW/CellH` 得到列数/行数。
 - `DesktopSurface.Origin`：工作区原点相对宿主窗口左上角的 DIP 偏移（工作区不含任务栏）。
 - 宿主窗口覆盖**整个显示器**（`Bounds`，含任务栏区域），图标/格子只在工作区内排布。
 - 拖放/菜单坐标是屏幕物理像素，`DesktopSurface.ToLocal` 用 `(screen - Bounds.Left) / Scale` 换算为 DIP。
-- 显示器设备名（`\\.\DISPLAY1`）是布局里的主键；显示器缺失时项临时落到主屏但不改写原值，详见 [boxes.md](boxes.md)。
+- **显示器主键是设备接口路径，不是 GDI 设备名**：`DesktopShell.GetMonitors` 对每个显示器的 `szDevice`（`\\.\DISPLAYn`）调 `EnumDisplayDevices(…, EDD_GET_DEVICE_INTERFACE_NAME)`（`DesktopShell.StableId`），取第一个 `DISPLAY_DEVICE_ACTIVE` 且 `DeviceID` 非空的项，其 `DeviceID`（形如 `\\?\DISPLAY#型号#实例#{GUID}`，含显示器型号与接口 UID）即 `MonitorInfo.Id`，作为 `MonitorGrid.Name`、`IconSlot.Monitor`、`BoxState.Monitor` 的值；`MonitorInfo.DeviceName` 仅用于日志。
+  - 为什么不用 `\\.\DISPLAYn`：这个编号由系统按枚举顺序分配，**重启、熄屏/唤醒、拔插后可能对调**（实测某次启动后主屏从 `DISPLAY1` 变成 `DISPLAY2`），用它当主键会让两屏的格子与图标整体互换。
+  - 退回设备名的条件：取不到活动的 `DeviceID`（`EnumDisplayDevices` 失败或全空），或与前面已有显示器的 `Id` 重复（忽略大小写，如克隆屏）——这一个显示器的 `Id` 退回 `szDevice`，保证 `MonitorGrid.Name` 唯一（下游有 `ToDictionary`）。
+  - 旧数据迁移：旧版 `layout.json` 里存的是设备名，`DesktopController.Reconcile` 每次对账前调 `LayoutReconciler.MigrateMonitorNames` 把等于当前在场设备名的值改写为 `Id`（不在场的旧名保持原样），详见 [data-and-config.md](data-and-config.md)。
+  - 日志：`DesktopController.LogMonitors` 在启动和每次显示器变化后逐屏记“显示器：设备名 Id=… 主屏=… 物理矩形=… 缩放=…”。
+- 显示器缺失（熄屏后 DP 显示器会暂时从系统消失）时项临时落到主屏：格子不改写 `Monitor`；自由图标因位置挪动，会在 `IconSlot.Home` 记下原位置，显示器回来后自动回去，详见 [boxes.md](boxes.md)“对账”第 3、4 条。
 - 新增/移除显示器、改分辨率/缩放：`WM_DISPLAYCHANGE` → 去抖 600ms → 重建全部宿主窗口（[architecture.md](architecture.md)）。
 
 ## Win10 与 Win11 24H2

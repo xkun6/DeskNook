@@ -51,6 +51,24 @@ DeskNook 通过 `ShowWindow(SW_HIDE)` 隐藏系统 `SysListView32`，而不是�
 - vswhere 必须带 `-requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64`。
 - 测试步骤会编译 C++，所以 `dotnet test` 也依赖 VS。
 
+## 两块屏的格子/图标互相调换
+
+现象：双屏下，两块屏上的格子、以及没进格子的自由图标，整体互相换到对方屏幕（重启、熄屏唤醒后出现）。
+
+两条根因（均已修复）：
+
+1. **显示器主键不稳定**（主因）：旧版用 GDI 设备名 `\\.\DISPLAYn` 作布局里的显示器主键，这个编号会变（日志里可见某次启动后主屏从 `DISPLAY1` 变成 `DISPLAY2`），全部内容就跟着名字换屏。现在改用显示器设备接口路径：`DesktopShell.GetMonitors` / `DesktopShell.StableId` → `MonitorInfo.Id`，布局里的 `IconSlot.Monitor`、`BoxState.Monitor`、`MonitorGrid.Name` 都是它（见 [desktop-layer.md](desktop-layer.md)“DPI 与多显示器”）。
+2. **熄屏后显示器暂时消失，自由图标被永久改写到主屏**：DP 显示器熄屏会暂时从系统消失，旧版 `LayoutReconciler.Reconcile` 会把该屏自由图标的 slot 永久改写成主屏，亮屏后不回去；副屏的格子虽然只是临时显示在主屏，但会盖住主屏的自由图标，这些图标也被永久挪走。现在被挪走的图标在 `IconSlot.Home` 记下原位置，原显示器回来后 `Reconcile` 自动让它们回去（见 [boxes.md](boxes.md)“对账”第 3、4 条）。
+
+排查看 `<数据根>\logs\desknook-yyyy-MM-dd.log`：
+
+- `显示器：<设备名> Id=<设备接口路径> 主屏=… 物理矩形=… 缩放=…`：启动和每次显示器变化后逐屏一行（`DesktopController.LogMonitors`）。用 `Id` 而不是设备名判断“同一块屏”；`Id` 若等于设备名，说明没取到设备接口路径（退回条件见 desktop-layer.md）。
+- `布局：旧显示器名迁移为稳定 ID N 处`：升级后第一次启动出现，旧设备名被改写为 `Id`（`LayoutReconciler.MigrateMonitorNames`）。
+- `布局：N 项回到原显示器位置`：显示器回来后图标按 `Home` 回位（`ReconcileResult.Returned`）。
+- `布局：新分配 N 项位置`：有项被重新安置。显示器刚消失/刚回来的前后出现很多条，说明图标被挪到了主屏（此时应带 `Home`，可在 `layout.json` 的 `FreeIcons[].Home` 看到）；平时反复出现则查别的原因。
+
+注意：升级后旧布局按“当前”的设备名迁移到 `Id`。如果升级前设备名与物理屏幕的对应关系已经对调过，迁移后的内容仍在“错”的那块屏上，需要手动把格子/图标拖回一次，之后因为主键稳定就不会再换了。
+
 ## 大图标下某些程序图标很小 / 在左上角
 
 现象：图标尺寸设为大（如 96）时，个别程序（只带 32/48 图标的老程序）的图标缩在格子左上角。

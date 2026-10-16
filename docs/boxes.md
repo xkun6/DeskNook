@@ -14,7 +14,7 @@
 | `Name` | string | 标题。新建时 `UniqueBoxName` 保证不重名（`新格子`、`新格子 2`…；映射格子默认取目录名）；重命名（`RenameBox`）不检查重名 |
 | `Kind` | `Normal` / `Mapped`（JSON 里是字符串） | 普通格子成员是桌面项；映射格子内容来自目录 |
 | `MappedPath` | string? | 仅映射格子：目录路径 |
-| `Monitor` | string | 所在显示器设备名；显示器不存在时**临时**显示在主屏，这里不改写 |
+| `Monitor` | string | 所在显示器的**稳定 ID**（`DesktopShell.MonitorInfo.Id`，设备接口路径，不是会变的 `\\.\DISPLAYn`，见 [desktop-layer.md](desktop-layer.md)“DPI 与多显示器”）；显示器不存在时**临时**显示在主屏，这里不改写 |
 | `Rect` | `{X,Y,W,H}` | 相对该显示器**工作区左上角**的 DIP，**展开状态下**的完整尺寸（折叠不改它） |
 | `Collapsed` | bool | 折叠：显示时只有标题栏高度 |
 | `Locked` | bool | 锁定：不能移动/缩放 |
@@ -23,7 +23,7 @@
 | `ItemKeys` | string[] | 普通格子的成员 key（有序）；映射格子不使用（对账时清空） |
 | `Gone` | `{key: 消失时间}` | `ItemKeys` 里已从桌面消失的 key 的首次消失时间（7 天保留） |
 
-相关：`IconSlot`（自由图标位置 `Monitor/Col/Row/LastSeenUtc`）、`ViewSettings`（`IconSize`、`SortKey`、`IconsHidden`）、`LayoutState`（`FreeIcons`、`Boxes`、`View`、`SystemPositionsImported`）。完整 JSON 示例见 [data-and-config.md](data-and-config.md)。
+相关：`IconSlot`（自由图标位置 `Monitor/Col/Row/LastSeenUtc/Home`；`Home` 是显示器暂时缺失时被挪走前的原位置，见下“对账”第 3、4 条）、`ViewSettings`（`IconSize`、`SortKey`、`IconsHidden`）、`LayoutState`（`FreeIcons`、`Boxes`、`View`、`SystemPositionsImported`）。完整 JSON 示例见 [data-and-config.md](data-and-config.md)。
 
 ## 几何常量与规则（`BoxGeometry`）
 
@@ -118,8 +118,12 @@
 
 1. **key 唯一归属**：一个 key 只能属于“自由区”或“某一个普通格子”。多个格子都含同一 key 时先到先得（后者被剔除），同一格子内去重；在格子里的 key 立即从 `FreeIcons` 移除。写操作也维护这点：`BoxOps.MoveToBox` 从自由区和所有其他格子摘除；`LayoutReconciler.Move` 先 `RemoveFromBoxes`。
 2. **消失项保留 7 天**（`DefaultRetention`）：格子里的成员不在当前项集合里 → 记入 `Gone[key]=首次消失时间`，仍保留在 `ItemKeys`（顺序与位置不丢，文件回来时原样出现）；超过 7 天才删除。自由图标同理用 `IconSlot.LastSeenUtc`。回来则清除标记。`Gone` 里不再属于任何成员的 key 会被清掉。临时重命名/临时移动因此不会丢位置。
-3. **自由图标位置合法性**：在场且位置合法（显示器存在、行列在网格内、未被格子覆盖、未被同屏其他图标占用）的保留；否则重新安置：原显示器还在 → 原行列就近 `NearestEmpty`；显示器消失 → **主屏** + 原行列就近；全新项 → 主屏 `FirstEmpty`（按列向下填）。
-4. **显示器缺失时格子的临时落位**：`Effective` 把格子放到主屏并夹进工作区，**不改写** `box.Monitor`；显示器回来后自动回到原位。`SetBoxRect`（用户亲手移动/缩放）才会写入新的 `Monitor`。
+3. **自由图标位置合法性与回位**：在场且位置合法（显示器存在、行列在网格内、未被格子覆盖、未被同屏其他图标占用）的保留；否则重新安置：原显示器还在 → 原行列就近 `NearestEmpty`；显示器消失 → **主屏** + 原行列就近；全新项 → 主屏 `FirstEmpty`（按列向下填）。
+   - **记原位 `IconSlot.Home`**：显示器消失分支把原 `Monitor/Col/Row` 记入新 slot 的 `Home`（已有 `Home` 则沿用，不被覆盖）；原显示器在但被“临时落到本屏的格子”盖住（见第 4 条 `tempCovered`）同样记 `Home`。被用户亲手移动的格子盖住的图标不记 `Home`（永久就近挪开，语义不变）。
+   - **回位**：`Home.Monitor` 重新在场时，该图标先不占位，待第 1 步其余图标占位后处理——`Home` 行列在网格内且空闲 → 改回 `Home` 的显示器/行列、清 `Home`、计入 `ReconcileResult.Returned`（日志“布局：N 项回到原显示器位置”）；原位仍被临时落到该屏的格子盖住 → 保留 `Home` 继续等；原位被别的图标占 → 放弃回位、清 `Home`，按当前位置照旧校验。
+   - **缺失期间不丢 `Home`**：已临时落到主屏且位置合法的 slot 在第 1 步直接保留，`Home` 不动。
+   - **何时清 `Home`**：用户移动（`LayoutReconciler.Move` 新建 slot）、整理撤销挪走占位者（`AutoOrganizer.ApplyUndo`）、回位完成或放弃时；`LayoutReconciler.Rename` 转移 slot 时保留。
+4. **显示器缺失时格子的临时落位**：`Effective` 把格子放到主屏并夹进工作区，**不改写** `box.Monitor`；显示器回来后自动回到原位。`SetBoxRect`（用户亲手移动/缩放）才会写入新的 `Monitor`。`LayoutReconciler.Reconcile` 把这类“自身 `Monitor` 不在当前网格里、因而临时落到别的屏”的格子覆盖的单元收集为 `tempCovered`，临时格子盖住的自由图标只是暂时让位，所以记 `Home`、显示器回来后回原位（单测 `BoxTests.cs:MonitorHomeTests`：`显示器暂时缺失_自由图标临时落主屏并记原位_副屏回来后回原位`、`副屏缺失时其格子临时落主屏盖住自由图标_图标被挪开并记原位_副屏回来后回原位`、`用户亲手移动格子盖住图标_图标被挪开但不记原位`、`显示器回来但原位已被其他图标占_放弃回位且位置合法`、`Move之后Home清空`）。
 5. **格子移动/缩放/展开后的自由图标让位**：`SetBoxRect`、`ToggleBoxCollapsed` 都会再对账，被盖住的自由图标走第 3 条就近挪开。
 6. **映射格子**：`ItemKeys` 与 `Gone` 每次对账清空。
 7. **改名**：`LayoutReconciler.Rename(state, 旧, 新)` 把旧 key 的自由位置与所有格子成员关系转给新 key（`Gone` 标记丢弃）。

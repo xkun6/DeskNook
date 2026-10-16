@@ -42,9 +42,13 @@
 {
   "Version": 1,
   "FreeIcons": {
-    "C:\\Users\\Alice\\Desktop\\报告.docx": { "Monitor": "\\\\.\\DISPLAY1", "Col": 0, "Row": 2, "LastSeenUtc": null },
-    "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}": { "Monitor": "\\\\.\\DISPLAY1", "Col": 0, "Row": 0, "LastSeenUtc": null },
-    "C:\\Users\\Alice\\Desktop\\旧文件.txt": { "Monitor": "\\\\.\\DISPLAY1", "Col": 3, "Row": 1, "LastSeenUtc": "2026-10-01T08:00:00Z" }
+    "C:\\Users\\Alice\\Desktop\\报告.docx": { "Monitor": "\\\\?\\DISPLAY#ABC1234#5&1a2b3c4d&0&UID256#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}", "Col": 0, "Row": 2, "LastSeenUtc": null },
+    "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}": { "Monitor": "\\\\?\\DISPLAY#ABC1234#5&1a2b3c4d&0&UID256#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}", "Col": 0, "Row": 0, "LastSeenUtc": null },
+    "C:\\Users\\Alice\\Desktop\\旧文件.txt": { "Monitor": "\\\\?\\DISPLAY#ABC1234#5&1a2b3c4d&0&UID256#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}", "Col": 3, "Row": 1, "LastSeenUtc": "2026-10-01T08:00:00Z" },
+    "C:\\Users\\Alice\\Desktop\\笔记.txt": {
+      "Monitor": "\\\\?\\DISPLAY#ABC1234#5&1a2b3c4d&0&UID256#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}", "Col": 1, "Row": 4, "LastSeenUtc": null,
+      "Home": { "Monitor": "\\\\?\\DISPLAY#XYZ5678#5&9e8d7c6b&0&UID4352#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}", "Col": 2, "Row": 3 }
+    }
   },
   "Boxes": [
     {
@@ -52,7 +56,7 @@
       "Name": "文档",
       "Kind": "Normal",
       "MappedPath": null,
-      "Monitor": "\\\\.\\DISPLAY1",
+      "Monitor": "\\\\?\\DISPLAY#ABC1234#5&1a2b3c4d&0&UID256#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}",
       "Rect": { "X": 1200.0, "Y": 100.0, "W": 300.0, "H": 236.0 },
       "Collapsed": false,
       "Locked": false,
@@ -66,7 +70,7 @@
       "Name": "下载",
       "Kind": "Mapped",
       "MappedPath": "D:\\Downloads",
-      "Monitor": "\\\\.\\DISPLAY2",
+      "Monitor": "\\\\?\\DISPLAY#XYZ5678#5&9e8d7c6b&0&UID4352#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}",
       "Rect": { "X": 50.0, "Y": 50.0, "W": 300.0, "H": 236.0 },
       "Collapsed": true,
       "Locked": true,
@@ -84,12 +88,15 @@
 | 字段 | 说明 |
 |---|---|
 | `Version` | 目前恒为 1，**还没有按版本迁移的代码**；改格式靠“只增字段 + 默认值” |
-| `FreeIcons` | key → `IconSlot`。key 是解析名（路径或 `::{CLSID}`），字典忽略大小写；`Col/Row` 是该显示器网格的列/行；`LastSeenUtc` 仅在项消失后记录首次消失时间，超过 7 天清理 |
-| `Boxes[]` | 见 [boxes.md](boxes.md) 的字段表；`Rect` 是展开状态下相对工作区的 DIP；`ViewMode`（`""`/`large`/`medium`/`small`/`list`，缺失或未知值 = `""` 跟随桌面，`LayoutStore.Load` 规整）为格子的“查看”视图 |
+| `FreeIcons` | key → `IconSlot`。key 是解析名（路径或 `::{CLSID}`），字典忽略大小写；`Monitor` 是显示器**稳定 ID**（`DesktopShell.MonitorInfo.Id`，设备接口路径，如 `\\?\DISPLAY#型号#实例#{GUID}`；取不到时才是 GDI 设备名 `\\.\DISPLAYn`），不是会变的设备名；`Col/Row` 是该显示器网格的列/行；`LastSeenUtc` 仅在项消失后记录首次消失时间，超过 7 天清理 |
+| `FreeIcons[].Home` | `IconSlot.Home`（`IconHome`：`Monitor/Col/Row`，可缺省）。图标因显示器暂时缺失（或被临时落到本屏的格子盖住）被挪走前的原位置；`LayoutReconciler.Reconcile` 在原显示器回来且原位空闲时让图标回去并清掉它，原位被占则放弃回位并清掉；用户移动（`LayoutReconciler.Move`）、整理撤销挪位（`AutoOrganizer.ApplyUndo`）都会清掉。纯向前兼容的新增字段 |
+| `Boxes[]` | 见 [boxes.md](boxes.md) 的字段表（`Monitor` 同样是显示器稳定 ID）；`Rect` 是展开状态下相对工作区的 DIP；`ViewMode`（`""`/`large`/`medium`/`small`/`list`，缺失或未知值 = `""` 跟随桌面，`LayoutStore.Load` 规整）为格子的“查看”视图 |
 | `View.IconSize` | 图标大小（DIP，默认 48）；跟随系统时首次取系统值 |
 | `View.SortKey` | 最近一次“排序方式”（`name/size/type/date`，手动摆放后清空） |
 | `View.IconsHidden` | 双击隐藏状态（重启后保持） |
 | `SystemPositionsImported` | 是否已导入过系统桌面图标位置（只导入一次，见 [desktop-items.md](desktop-items.md)） |
+
+旧版本（升级前）的 `Monitor` 存的是 GDI 设备名 `\\.\DISPLAYn`。启动/显示器变化后每次对账前，`DesktopController.Reconcile` 调 `LayoutReconciler.MigrateMonitorNames`，把等于**当前在场**某个设备名（忽略大小写）的 `Monitor`（含 `FreeIcons`、`Home`、`Boxes`）改写为对应稳定 ID，并记日志“布局：旧显示器名迁移为稳定 ID N 处”；当前不在场的旧名保持原样，等它出现再迁（`MonitorHomeTests.旧设备名迁移为稳定ID_格子与Home一并迁移_其余不变`）。
 
 向后兼容：阶段 1 的旧文件没有 `Boxes`/`View` 字段，加载后补默认（`BoxPersistenceTests.读取阶段1的layout_json_无Boxes字段`、`读取阶段1占位格子_缺新字段时补默认值`、`Stage4Tests.布局隐藏状态默认显示_旧layout_json兼容_往返保持`）。
 
@@ -129,12 +136,12 @@
   "CreatedUtc": "2026-10-07T01:23:45Z",
   "CreatedBoxIds": [ "3f9a1c2b7d10" ],
   "Moves": [
-    { "Key": "C:\\Users\\Alice\\Desktop\\a.docx", "Monitor": "\\\\.\\DISPLAY1", "Col": 2, "Row": 1 }
+    { "Key": "C:\\Users\\Alice\\Desktop\\a.docx", "Monitor": "\\\\?\\DISPLAY#ABC1234#5&1a2b3c4d&0&UID256#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}", "Col": 2, "Row": 1 }
   ]
 }
 ```
 
-`CreatedBoxIds`：本次整理新建的格子；`Moves`：本次移入格子的 key 及其整理前的自由区位置。`Moves` 为空视为没有记录。语义见 [organize.md](organize.md)。
+`CreatedBoxIds`：本次整理新建的格子；`Moves`：本次移入格子的 key 及其整理前的自由区位置（`Monitor` 含义同 `layout.json`，是显示器稳定 ID；旧撤销记录里的设备名在撤销时找不到对应显示器就回主屏，不做迁移）。`Moves` 为空视为没有记录。语义见 [organize.md](organize.md)。
 
 ## 注册表项全表
 
