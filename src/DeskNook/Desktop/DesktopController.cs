@@ -199,6 +199,7 @@ internal sealed class DesktopController : IDisposable
         }
         if (AppSettings.IconSizeOf(Settings.IconSizeMode) is { } fixedSize) Layout.View.IconSize = fixedSize;
         RebuildGrids();
+        LogMonitors();
 
         if (!Layout.SystemPositionsImported && sys != null && sys.Positions.Count > 0)
         {
@@ -225,6 +226,7 @@ internal sealed class DesktopController : IDisposable
     {
         _monitors = DesktopShell.GetMonitors();
         RebuildGrids();
+        LogMonitors();
         Reconcile();
         SyncMapped();
         ScheduleSave();
@@ -236,15 +238,26 @@ internal sealed class DesktopController : IDisposable
         CellW = Layout.View.IconSize + _cellExtraDip;
         CellH = Layout.View.IconSize + _cellExtraYDip;
         Grids = _monitors
-            .Select(m => new MonitorGrid(m.DeviceName, m.Scale, m.Work.Left, m.Work.Top, m.Work.Width, m.Work.Height, CellW, CellH))
+            .Select(m => new MonitorGrid(m.Id, m.Scale, m.Work.Left, m.Work.Top, m.Work.Width, m.Work.Height, CellW, CellH))
             .ToList();
+    }
+
+    /// <summary>记录当前显示器列表（设备名会变，排查两屏内容互换时靠稳定 ID 对照）。</summary>
+    private void LogMonitors()
+    {
+        foreach (var m in _monitors)
+            Log.Info($"显示器：{m.DeviceName} Id={m.Id} 主屏={m.IsPrimary} 物理矩形=({m.Bounds.Left},{m.Bounds.Top},{m.Bounds.Width}x{m.Bounds.Height}) 缩放={m.Scale:0.##}");
     }
 
     private void Reconcile()
     {
         if (Grids.Count == 0) return;
+        var idByName = _monitors.ToDictionary(m => m.DeviceName, m => m.Id, StringComparer.OrdinalIgnoreCase);
+        var migrated = LayoutReconciler.MigrateMonitorNames(Layout, idByName);
+        if (migrated > 0) Log.Info($"布局：旧显示器名迁移为稳定 ID {migrated} 处");
         var res = LayoutReconciler.Reconcile(Layout, Source.Items.Select(i => i.Key).ToList(), Grids, DateTime.UtcNow);
         if (res.Placed.Count > 0) Log.Info($"布局：新分配 {res.Placed.Count} 项位置");
+        if (res.Returned.Count > 0) Log.Info($"布局：{res.Returned.Count} 项回到原显示器位置");
     }
 
     /// <summary>让映射格子的目录来源与布局里的映射格子保持一致（新增则监听，删除/改路径则释放）。</summary>
@@ -358,9 +371,9 @@ internal sealed class DesktopController : IDisposable
     public IEnumerable<BoxState> BoxesOn(string monitor) =>
         Layout.Boxes.Where(b => EffectiveRect(b)?.Grid.Name == monitor);
 
-    /// <summary>屏幕物理像素点所在显示器的设备名；不在任何显示器上时为 null。</summary>
+    /// <summary>屏幕物理像素点所在显示器的稳定 ID（<see cref="MonitorInfo.Id"/>）；不在任何显示器上时为 null。</summary>
     public string? MonitorAt(Win32.POINT p) =>
-        _monitors.FirstOrDefault(m => p.X >= m.Bounds.Left && p.X < m.Bounds.Right && p.Y >= m.Bounds.Top && p.Y < m.Bounds.Bottom).DeviceName;
+        _monitors.FirstOrDefault(m => p.X >= m.Bounds.Left && p.X < m.Bounds.Right && p.Y >= m.Bounds.Top && p.Y < m.Bounds.Bottom).Id;
 
     /// <summary>格子当前视图的排布参数（跟随桌面时与桌面图标尺寸一致）。</summary>
     public BoxView ViewOf(BoxState box) => BoxGeometry.ViewFor(box.ViewMode, IconSize, CellW, CellH);
@@ -966,10 +979,10 @@ internal sealed class DesktopController : IDisposable
     {
         if (_monitors.Count == 0) return null;
         var m = _monitors.FirstOrDefault(x => x.IsPrimary);
-        if (m.DeviceName == null) m = _monitors[0];
+        if (m.Id == null) m = _monitors[0];
         SetIconsVisible(true);
         var pt = new Win32.POINT { X = m.Work.Left + m.Work.Width / 2, Y = m.Work.Top + m.Work.Height / 2 };
-        return NewBox(IntPtr.Zero, pt, m.DeviceName);
+        return NewBox(IntPtr.Zero, pt, m.Id);
     }
 
     /// <summary>用选中的桌面项新建普通格子。</summary>

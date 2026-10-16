@@ -12,8 +12,11 @@ internal readonly record struct DesktopInfo(IntPtr Progman, IntPtr DefView, IntP
         $"Progman=0x{Progman:X}, DefView=0x{DefView:X}(父=0x{DefViewParent:X} {Win32.GetClassNameString(DefViewParent)}), ListView=0x{ListView:X}";
 }
 
-/// <summary>显示器信息：Bounds/Work 为物理像素的虚拟屏幕坐标，Scale 为 DPI 缩放（1.0 = 100%）。</summary>
-internal readonly record struct MonitorInfo(string DeviceName, Win32.RECT Bounds, bool IsPrimary, Win32.RECT Work, double Scale);
+/// <summary>
+/// 显示器信息：Bounds/Work 为物理像素的虚拟屏幕坐标，Scale 为 DPI 缩放（1.0 = 100%）。
+/// Id 是布局主键（显示器设备接口路径，重启/熄屏后稳定；取不到时退回 DeviceName）；DeviceName 即 GDI 设备名 \\.\DISPLAYn，会变，只用于日志。
+/// </summary>
+internal readonly record struct MonitorInfo(string Id, string DeviceName, Win32.RECT Bounds, bool IsPrimary, Win32.RECT Work, double Scale);
 
 /// <summary>定位桌面窗口、隐藏/恢复系统桌面图标（仅 ShowWindow，不写注册表）。</summary>
 internal static class DesktopShell
@@ -112,11 +115,27 @@ internal static class DesktopShell
             if (Win32.GetMonitorInfo(hMon, ref mi))
             {
                 var scale = Win32.GetDpiForMonitor(hMon, 0, out var dpiX, out _) == 0 && dpiX > 0 ? dpiX / 96.0 : 1.0;
-                list.Add(new MonitorInfo(mi.szDevice, mi.rcMonitor, (mi.dwFlags & Win32.MONITORINFOF_PRIMARY) != 0, mi.rcWork, scale));
+                var id = StableId(mi.szDevice);
+                if (list.Any(x => string.Equals(x.Id, id, StringComparison.OrdinalIgnoreCase))) id = mi.szDevice; // 重复（如克隆屏）：退回设备名，保证主键唯一
+                list.Add(new MonitorInfo(id, mi.szDevice, mi.rcMonitor, (mi.dwFlags & Win32.MONITORINFOF_PRIMARY) != 0, mi.rcWork, scale));
             }
             return true;
         }, IntPtr.Zero);
         list.Sort((a, b) => b.IsPrimary.CompareTo(a.IsPrimary)); // 主显示器排第一（布局分配新项用）
         return list;
+    }
+
+    /// <summary>
+    /// 该 GDI 设备下处于活动状态的显示器的设备接口路径（形如 \\?\DISPLAY#型号#实例#{GUID}），不随 \\.\DISPLAYn 编号变化；取不到时退回设备名。
+    /// </summary>
+    private static string StableId(string deviceName)
+    {
+        for (uint i = 0; i < 8; i++)
+        {
+            var dd = new Win32.DISPLAY_DEVICE { cb = System.Runtime.InteropServices.Marshal.SizeOf<Win32.DISPLAY_DEVICE>() };
+            if (!Win32.EnumDisplayDevices(deviceName, i, ref dd, Win32.EDD_GET_DEVICE_INTERFACE_NAME)) break;
+            if ((dd.StateFlags & Win32.DISPLAY_DEVICE_ACTIVE) != 0 && !string.IsNullOrEmpty(dd.DeviceID)) return dd.DeviceID;
+        }
+        return deviceName;
     }
 }

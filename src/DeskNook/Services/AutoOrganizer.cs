@@ -241,7 +241,7 @@ public static class AutoOrganizer
                 {
                     var tmp = new HashSet<(int, int)>(occupied[mon]) { (c, r) };
                     var (oc, orow) = GridLayout.NearestEmpty(grid.Size, tmp, c, r);
-                    other.Value.Col = oc; other.Value.Row = orow;
+                    other.Value.Col = oc; other.Value.Row = orow; other.Value.Home = null; // 新位置是整理撤销定的，不再回位
                     occupied[mon].Add((oc, orow));
                 }
                 else if (occupied[mon].Contains((c, r)))

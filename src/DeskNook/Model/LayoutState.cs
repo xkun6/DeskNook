@@ -28,7 +28,7 @@ public sealed class BoxState
     public string Name { get; set; } = "";
     public BoxKind Kind { get; set; } = BoxKind.Normal;
     public string? MappedPath { get; set; }
-    /// <summary>所在显示器设备名；显示器不存在时临时显示在主屏，但这里不改写。</summary>
+    /// <summary>所在显示器的稳定 ID（<c>MonitorInfo.Id</c>，设备接口路径）；显示器不存在时临时显示在主屏，但这里不改写。</summary>
     public string Monitor { get; set; } = "";
     public BoxRect Rect { get; set; } = new();
     public bool Collapsed { get; set; }
@@ -45,10 +45,21 @@ public sealed class BoxState
 /// <summary>自由图标所在格子；LastSeenUtc 仅在项消失后记录消失时间。</summary>
 public sealed class IconSlot
 {
+    /// <summary>所在显示器的稳定 ID（同 <see cref="BoxState.Monitor"/>）。</summary>
     public string Monitor { get; set; } = "";
     public int Col { get; set; }
     public int Row { get; set; }
     public DateTime? LastSeenUtc { get; set; }
+    /// <summary>因显示器暂时缺失（或被临时落到本屏的格子挡住）被挪走前的原位置；原显示器回来时自动回去，用户移动会清掉。</summary>
+    public IconHome? Home { get; set; }
+}
+
+/// <summary>自由图标被临时挪走前的原位置（显示器稳定 ID + 行列）。</summary>
+public sealed class IconHome
+{
+    public string Monitor { get; set; } = "";
+    public int Col { get; set; }
+    public int Row { get; set; }
 }
 
 public sealed class ViewSettings

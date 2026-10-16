@@ -567,3 +567,141 @@ public class BoxPersistenceTests : IDisposable
         Assert.Equal(@"D:\x", l.Boxes[1].MappedPath);
     }
 }
+
+public class MonitorHomeTests
+{
+    private static readonly DateTime Now = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+    private const string P = @"\\?\DISPLAY#AAA0001#1&aaaaaaaa&0&UID1#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
+    private const string S = @"\\?\DISPLAY#BBB0002#5&bbbbbbbb&0&UID2#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
+
+    // 主屏 13x8、副屏 8x8，格子 75x100
+    private static MonitorGrid Primary() => new(P, 1.0, 0, 0, 1000, 800, 75, 100);
+    private static MonitorGrid Secondary() => new(S, 1.0, 1000, 0, 600, 800, 75, 100);
+    private static List<MonitorGrid> OnlyPrimary() => new() { Primary() };
+    private static List<MonitorGrid> Both() => new() { Primary(), Secondary() };
+
+    private static BoxState NewBox(string id, string monitor, double x, double y, int cols = 4, int rows = 2) => new()
+    {
+        Id = id, Name = id, Monitor = monitor,
+        Rect = new BoxRect(x, y, cols * 75, BoxGeometry.HeightFor(rows, 100)),
+    };
+
+    [Fact]
+    public void 显示器暂时缺失_自由图标临时落主屏并记原位_副屏回来后回原位()
+    {
+        var s = new LayoutState();
+        LayoutReconciler.Move(s, "k", S, 2, 3);
+
+        var r1 = LayoutReconciler.Reconcile(s, new[] { "k" }, OnlyPrimary(), Now);
+        Assert.Equal(new[] { "k" }, r1.Placed);
+        Assert.Equal((P, 2, 3), (s.FreeIcons["k"].Monitor, s.FreeIcons["k"].Col, s.FreeIcons["k"].Row));
+        Assert.Equal((S, 2, 3), (s.FreeIcons["k"].Home!.Monitor, s.FreeIcons["k"].Home!.Col, s.FreeIcons["k"].Home!.Row));
+
+        // 缺失期间反复对账：位置合法，Home 不能被清掉
+        var r2 = LayoutReconciler.Reconcile(s, new[] { "k" }, OnlyPrimary(), Now.AddMinutes(1));
+        Assert.Empty(r2.Placed);
+        Assert.NotNull(s.FreeIcons["k"].Home);
+
+        var r3 = LayoutReconciler.Reconcile(s, new[] { "k" }, Both(), Now.AddMinutes(2));
+        Assert.Equal(new[] { "k" }, r3.Returned);
+        Assert.Equal((S, 2, 3), (s.FreeIcons["k"].Monitor, s.FreeIcons["k"].Col, s.FreeIcons["k"].Row));
+        Assert.Null(s.FreeIcons["k"].Home);
+    }
+
+    [Fact]
+    public void 副屏缺失时其格子临时落主屏盖住自由图标_图标被挪开并记原位_副屏回来后回原位()
+    {
+        var s = new LayoutState();
+        var box = NewBox("A", S, 0, 0); // 副屏上的格子，副屏缺失时临时落到主屏左上角，覆盖 (0..3, 0..2)
+        s.Boxes.Add(box);
+        LayoutReconciler.Move(s, "f", P, 1, 1);
+
+        LayoutReconciler.Reconcile(s, new[] { "f" }, OnlyPrimary(), Now);
+        Assert.Equal(S, box.Monitor); // 格子本身不改写
+        var covered = BoxGeometry.CoveredCells(s, OnlyPrimary(), P);
+        var slot = s.FreeIcons["f"];
+        Assert.DoesNotContain((slot.Col, slot.Row), covered);
+        Assert.Equal((P, 1, 1), (slot.Home!.Monitor, slot.Home!.Col, slot.Home!.Row));
+
+        // 格子仍盖着原位：反复对账不能放弃回位
+        LayoutReconciler.Reconcile(s, new[] { "f" }, OnlyPrimary(), Now.AddMinutes(1));
+        Assert.NotNull(s.FreeIcons["f"].Home);
+        Assert.DoesNotContain((s.FreeIcons["f"].Col, s.FreeIcons["f"].Row), covered);
+
+        var r = LayoutReconciler.Reconcile(s, new[] { "f" }, Both(), Now.AddMinutes(2));
+        Assert.Equal(new[] { "f" }, r.Returned);
+        Assert.Equal((P, 1, 1), (s.FreeIcons["f"].Monitor, s.FreeIcons["f"].Col, s.FreeIcons["f"].Row));
+        Assert.Null(s.FreeIcons["f"].Home);
+    }
+
+    [Fact]
+    public void 用户亲手移动格子盖住图标_图标被挪开但不记原位()
+    {
+        var s = new LayoutState();
+        s.Boxes.Add(NewBox("A", P, 0, 0)); // 格子自己的显示器在场
+        LayoutReconciler.Move(s, "f", P, 1, 1);
+
+        var r = LayoutReconciler.Reconcile(s, new[] { "f" }, Both(), Now);
+
+        Assert.Equal(new[] { "f" }, r.Placed);
+        Assert.Null(s.FreeIcons["f"].Home);
+        Assert.DoesNotContain((s.FreeIcons["f"].Col, s.FreeIcons["f"].Row), BoxGeometry.CoveredCells(s, Both(), P));
+    }
+
+    [Fact]
+    public void 显示器回来但原位已被其他图标占_放弃回位且位置合法()
+    {
+        var s = new LayoutState();
+        LayoutReconciler.Move(s, "k", S, 2, 3);
+        LayoutReconciler.Reconcile(s, new[] { "k" }, OnlyPrimary(), Now);
+        Assert.NotNull(s.FreeIcons["k"].Home);
+        LayoutReconciler.Move(s, "x", S, 2, 3); // 副屏回来时原位上已经是别的图标
+
+        var r = LayoutReconciler.Reconcile(s, new[] { "k", "x" }, Both(), Now.AddMinutes(1));
+
+        Assert.Empty(r.Returned);
+        Assert.Null(s.FreeIcons["k"].Home);
+        Assert.Equal((P, 2, 3), (s.FreeIcons["k"].Monitor, s.FreeIcons["k"].Col, s.FreeIcons["k"].Row));
+        Assert.Equal((S, 2, 3), (s.FreeIcons["x"].Monitor, s.FreeIcons["x"].Col, s.FreeIcons["x"].Row));
+    }
+
+    [Fact]
+    public void Move之后Home清空()
+    {
+        var s = new LayoutState();
+        LayoutReconciler.Move(s, "k", S, 2, 3);
+        LayoutReconciler.Reconcile(s, new[] { "k" }, OnlyPrimary(), Now);
+        Assert.NotNull(s.FreeIcons["k"].Home);
+
+        LayoutReconciler.Move(s, "k", P, 5, 5); // 用户把它拖到别处
+        LayoutReconciler.Reconcile(s, new[] { "k" }, Both(), Now.AddMinutes(1));
+
+        Assert.Null(s.FreeIcons["k"].Home);
+        Assert.Equal((P, 5, 5), (s.FreeIcons["k"].Monitor, s.FreeIcons["k"].Col, s.FreeIcons["k"].Row));
+    }
+
+    [Fact]
+    public void 旧设备名迁移为稳定ID_格子与Home一并迁移_其余不变()
+    {
+        var s = new LayoutState();
+        s.FreeIcons["a"] = new IconSlot { Monitor = @"\\.\DISPLAY1", Col = 1, Row = 1 };
+        s.FreeIcons["b"] = new IconSlot { Monitor = @"\\.\display2", Col = 2, Row = 2, Home = new IconHome { Monitor = @"\\.\DISPLAY1", Col = 3, Row = 3 } }; // 忽略大小写
+        s.FreeIcons["c"] = new IconSlot { Monitor = S, Col = 3, Row = 1 };       // 已是 ID
+        s.FreeIcons["d"] = new IconSlot { Monitor = @"\\.\DISPLAY9", Col = 4, Row = 1 }; // 当前不在场的旧名
+        s.Boxes.Add(NewBox("A", @"\\.\DISPLAY2", 0, 0));
+        s.Boxes.Add(NewBox("B", P, 0, 0));
+        var map = new Dictionary<string, string> { [@"\\.\DISPLAY1"] = P, [@"\\.\DISPLAY2"] = S };
+
+        var n = LayoutReconciler.MigrateMonitorNames(s, map);
+
+        Assert.Equal(4, n); // a、b、b.Home、格子 A
+        Assert.Equal(P, s.FreeIcons["a"].Monitor);
+        Assert.Equal(S, s.FreeIcons["b"].Monitor);
+        Assert.Equal(P, s.FreeIcons["b"].Home!.Monitor);
+        Assert.Equal(S, s.FreeIcons["c"].Monitor);
+        Assert.Equal(@"\\.\DISPLAY9", s.FreeIcons["d"].Monitor);
+        Assert.Equal(S, s.Boxes[0].Monitor);
+        Assert.Equal(P, s.Boxes[1].Monitor);
+        Assert.Equal(0, LayoutReconciler.MigrateMonitorNames(s, map)); // 幂等
+    }
+}

@@ -79,7 +79,7 @@ internal sealed class DesktopSurface : Canvas
         Unloaded += OnUnloaded;
     }
 
-    public string MonitorName => _monitor.DeviceName;
+    public string MonitorName => _monitor.Id;
     public MonitorInfo Monitor => _monitor;
 
     public void AttachWindow(IntPtr hwnd) => _hwnd = hwnd;
@@ -161,7 +161,7 @@ internal sealed class DesktopSurface : Canvas
 
     // ------------------------------------------------------------ 布局与渲染
 
-    private MonitorGrid? Grid => _c.GridOf(_monitor.DeviceName);
+    private MonitorGrid? Grid => _c.GridOf(_monitor.Id);
 
     /// <summary>格子(0,0) 左上角在本窗口中的 DIP 坐标（工作区原点）。</summary>
     private Point Origin => new((_monitor.Work.Left - _monitor.Bounds.Left) / _monitor.Scale,
@@ -183,8 +183,8 @@ internal sealed class DesktopSurface : Canvas
     private void Rebuild()
     {
         Log.Info($"桌面重建 #{++_rebuildCount}（{_monitor.DeviceName}）");
-        var freeItems = _c.ItemsOn(_monitor.DeviceName).ToDictionary(i => i.Key, StringComparer.OrdinalIgnoreCase);
-        var boxes = _c.BoxesOn(_monitor.DeviceName).ToList();
+        var freeItems = _c.ItemsOn(_monitor.Id).ToDictionary(i => i.Key, StringComparer.OrdinalIgnoreCase);
+        var boxes = _c.BoxesOn(_monitor.Id).ToList();
         var boxItems = boxes.ToDictionary(b => b.Id, b => _c.BoxItems(b));
         var wanted = new HashSet<string>(freeItems.Keys, StringComparer.OrdinalIgnoreCase);
         foreach (var list in boxItems.Values) foreach (var it in list) wanted.Add(it.Key);
@@ -390,7 +390,7 @@ internal sealed class DesktopSurface : Canvas
 
     /// <summary>本显示器上其他格子的当前矩形（相对工作区）。</summary>
     public IReadOnlyList<BoxRect> OtherRects(string boxId) =>
-        _c.BoxesOn(_monitor.DeviceName).Where(b => b.Id != boxId).Select(b => _c.EffectiveRect(b)!.Value.Rect).ToList();
+        _c.BoxesOn(_monitor.Id).Where(b => b.Id != boxId).Select(b => _c.EffectiveRect(b)!.Value.Rect).ToList();
 
     /// <summary>显示/更新/清除对齐辅助线。</summary>
     public void ShowGuides(IReadOnlyList<Guide> guides)
@@ -424,7 +424,7 @@ internal sealed class DesktopSurface : Canvas
     /// <summary>跨显示器拖动格子：目标是本屏时画预览框与辅助线，否则（或 null）清除本屏上的预览。</summary>
     private void OnBoxGhost(BoxGhost? g)
     {
-        if (g == null || !string.Equals(g.Monitor, _monitor.DeviceName, StringComparison.OrdinalIgnoreCase))
+        if (g == null || !string.Equals(g.Monitor, _monitor.Id, StringComparison.OrdinalIgnoreCase))
         {
             if (!_ghostShown) return;
             _ghostShown = false;
@@ -462,7 +462,7 @@ internal sealed class DesktopSurface : Canvas
     {
         Win32.GetCursorPos(out var pt);
         _c.ActiveBox = box;
-        _c.ShowBoxMenu(_hwnd, pt, _monitor.DeviceName, box);
+        _c.ShowBoxMenu(_hwnd, pt, _monitor.Id, box);
     }
 
     public void FocusSurface() => BringToForeground();
@@ -628,12 +628,12 @@ internal sealed class DesktopSurface : Canvas
         Win32.GetCursorPos(out var pt);
         if (ctl == null && BoxAtSource(e.OriginalSource as DependencyObject) is { } bc)
         {
-            _c.ShowBoxMenu(_hwnd, pt, _monitor.DeviceName, bc.Box);
+            _c.ShowBoxMenu(_hwnd, pt, _monitor.Id, bc.Box);
             e.Handled = true;
             return;
         }
         var items = ctl != null ? _c.SelectedItems : Array.Empty<DesktopItem>();
-        _c.ShowMenu(_hwnd, pt, _monitor.DeviceName, items);
+        _c.ShowMenu(_hwnd, pt, _monitor.Id, items);
         e.Handled = true;
     }
 

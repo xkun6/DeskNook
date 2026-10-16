@@ -29,6 +29,8 @@ public sealed class LayoutStore
                 s.FreeIcons = s.FreeIcons == null
                     ? new(StringComparer.OrdinalIgnoreCase)
                     : new Dictionary<string, IconSlot>(s.FreeIcons.Where(kv => kv.Value != null), StringComparer.OrdinalIgnoreCase);
+                foreach (var slot in s.FreeIcons.Values)
+                    if (slot.Home?.Monitor == null) slot.Home = null;
                 s.Boxes = (s.Boxes ?? new()).Where(b => b != null).ToList();
                 foreach (var b in s.Boxes)
                 {
